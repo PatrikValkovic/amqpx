@@ -3,10 +3,18 @@
   "compilerOptions": {
     "target": "es2016",
     "module": "commonjs",
-    "moduleResolution": "Node16",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
     "types": [
-      "vitest/globals",
+      "vitest/globals"
     ],
     "forceConsistentCasingInFileNames": true
-  }
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "**/*.spec.ts"
+  ]
 }
