@@ -1,4 +1,4 @@
-import { Channel } from '../lib/channel';
+import { Channel } from '../channel';
 import { TestExchange, TestProducer, TestQueue } from '.';
 
 export class TestChannel implements Channel {

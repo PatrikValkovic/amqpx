@@ -1,4 +1,4 @@
-import { Connection, ConnectionState } from '../lib/connection';
+import { Connection, ConnectionState } from '../connection';
 import { TestProducer } from './test-producer';
 import { TestChannel } from './test-channel';
 import { TestConsumer } from './test-consumer';

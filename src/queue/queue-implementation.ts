@@ -4,7 +4,7 @@ import { Exchange } from '../exchange';
 import { ConsumerImplementation, ConsumerOptions, Consumer } from '../consumer';
 import { ProducerOptions } from '../producer/types';
 import { ProducerImplementation } from '../producer';
-import { predefined } from '../../index';
+import { predefined } from '../index';
 import { Queue } from './queue';
 import { BindingArgs } from './types';
 

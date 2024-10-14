@@ -1,11 +1,11 @@
-import * as predefined from './lib/predefined';
+import * as predefined from './predefined';
 
-export { timeStrategies } from './lib/retry';
-export * from './lib/connection';
-export * from './lib/channel';
-export * from './lib/queue';
-export * from './lib/exchange';
-export * from './lib/consumer';
-export * from './lib/producer';
+export { timeStrategies } from './retry';
+export * from './connection';
+export * from './channel';
+export * from './queue';
+export * from './exchange';
+export * from './consumer';
+export * from './producer';
 export { predefined };
 export * from './errors';

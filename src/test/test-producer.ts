@@ -1,4 +1,4 @@
-import { Producer } from '../lib/producer';
+import { Producer } from '../producer';
 import { TestChannel } from './test-channel';
 
 export class TestProducer<T> implements Producer<T> {

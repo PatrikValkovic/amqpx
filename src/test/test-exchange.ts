@@ -1,4 +1,4 @@
-import { Exchange } from '../lib/exchange';
+import { Exchange } from '../exchange';
 import { TestConsumer, TestProducer } from '.';
 
 export class TestExchange implements Exchange {

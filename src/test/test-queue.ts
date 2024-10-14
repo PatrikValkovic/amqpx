@@ -1,4 +1,4 @@
-import { Queue } from '../lib/queue';
+import { Queue } from '../queue';
 import { TestConsumer } from './test-consumer';
 import { TestProducer } from './test-producer';
 

@@ -1,6 +1,6 @@
 import { Message } from 'amqplib';
-import { Channel } from '../lib/channel';
-import { Consumer } from '../lib/consumer';
+import { Channel } from '../channel';
+import { Consumer } from '../consumer';
 import { TestQueue } from './test-queue';
 import { TestChannel } from './test-channel';
 
