@@ -1,0 +1,12 @@
+{
+  "extends": "@patrikvalkovic/eslint-config/tsconfig.base.json",
+  "compilerOptions": {
+    "target": "es2016",
+    "module": "commonjs",
+    "moduleResolution": "Node16",
+    "types": [
+      "vitest/globals",
+    ],
+    "forceConsistentCasingInFileNames": true
+  }
+}
