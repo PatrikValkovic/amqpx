@@ -1,6 +1,22 @@
-import { Exchange } from '../exchange';
+import { Exchange } from '../../index';
 import { TestConsumer, TestProducer } from '.';
 
+/**
+ * Mock implementation of Exchange using vitest mocks.
+ *
+ * All `create*` methods return test classes from this package.
+ * `assert` and `bind` methods are vitest mocks returning current instance.
+ *
+ * @example
+ * ```ts
+ * import { TestExchange } from 'amqp-oop/vitest';
+ *
+ * const exchange = new TestExchange();
+ * // or create from TestChannel or TestConnection
+ *
+ * expect(exchange.bind).toBeCalledTimes(0);
+ * ```
+ */
 export class TestExchange implements Exchange {
     assert = vitest.fn().mockImplementation(() => Promise.resolve(this));
 

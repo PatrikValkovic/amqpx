@@ -1,0 +1,99 @@
+import { type z } from 'zod';
+import { Queue, Channel, ConsumerCallbackFn, Consumer } from '../../index';
+import { ZodValidationError } from './zod-validation-error';
+
+/**
+ * Consumer wrapper that validates received messages using Zod.
+ *
+ * Note that the schema may transform the message into different type
+ * (using e.g. `refine`), and this type wil lbe reflected in generic types.
+ *
+ * @example
+ * ```ts
+ * import { ZodValidatedConsumer } from 'amqp-oop/zod';
+ *
+ * const consumer = new ZodValidatedConsumer(
+ *     new TestConsumer(),
+ *     z.object({
+ *         foo: z.string(),
+ *     }),
+ * );
+ *
+ * await consumer.listen((args) => {
+ *     console.log(args.message.foo);
+ * });
+ *
+ * consumer.on('handlingFailed', error => {
+ *     if(error instanceof ZodValidationError) {
+ *         // do something
+ *     }
+ * });
+ * ```
+ */
+export class ZodValidatedConsumer<InputMessage, AdditionalProperties, OutputMessage = InputMessage> implements Consumer<OutputMessage, AdditionalProperties> {
+    /**
+     * Creates a new instance of ZodValidatedConsumer.
+     * @param consumer Consumer to wrap, implementation will reuse downstream implementation except the message validation.
+     * @param validator Zod schema to validate the message with. May transform the message into different type.
+     */
+    constructor(
+        private readonly consumer: Consumer<InputMessage, AdditionalProperties>,
+        private readonly validator: z.ZodType<OutputMessage, z.ZodTypeDef, InputMessage>,
+    ) {}
+
+    /**
+     * @inheritDoc
+     */
+    close(timeout?: number): Promise<void> {
+        return this.consumer.close(timeout);
+    }
+
+    /**
+     * Receives the message from downstream implementation, validates it using Zod schema,
+     * and calls the callback with the validated message.
+     *
+     * @param callback Callback to call when the message is validated.
+     * @throws ZodValidationError if the message is not valid.
+     */
+    async listen(callback: ConsumerCallbackFn<OutputMessage, AdditionalProperties>) {
+        await this.consumer.listen(args => {
+            const parsed = this.validator.safeParse(args.message);
+            if (!parsed.success)
+                throw new ZodValidationError(`Message validation failed with errors`, parsed.error);
+            return callback({
+                ...args,
+                message: parsed.data,
+            });
+        });
+        return this;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    on(eventName: 'handlingFailed', callback: (error: unknown) => void) {
+        this.consumer.on(eventName, callback);
+        return this;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    async setPrefetch(prefetch: number): Promise<void> {
+        await this.consumer.setPrefetch(prefetch);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    getQueue(): Queue {
+        return this.consumer.getQueue();
+    }
+
+    /**
+     * @inheritDoc
+     */
+    getChannel(): Channel {
+        return this.consumer.getChannel();
+    }
+}

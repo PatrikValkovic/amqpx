@@ -1,6 +1,27 @@
-import { Channel } from '../channel';
+import { Channel } from '../../index';
 import { TestExchange, TestProducer, TestQueue } from '.';
-
+/**
+ * Mock implementation of Channel using vitest mocks.
+ *
+ * The channel is instantly connected and all `create*` methods return
+ * test classes from this package. Non-creation methods returns default
+ * mock implementations returning undefined (or the same instance if semantic
+ * of the method requires so).
+ *
+ * @example
+ * ```ts
+ * import { TestConnection, TestChannel } from 'amqp-oop/vitest';
+ *
+ * const connection = new TestConnection();
+ *
+ * const channel = connection.createChannel();
+ * // or new TestConnection();
+ *
+ * const exchange = channel.createExchange();
+ *
+ * expect(exchange).toBeInstanceOf(TestExchange);
+ * ```
+ */
 export class TestChannel implements Channel {
 
     connect = vitest.fn().mockImplementation(() => Promise.resolve(this));
@@ -47,8 +68,8 @@ export class TestChannel implements Channel {
         },
     );
 
-    checkQueue = vitest.fn().mockImplementation(() => Promise.resolve({
-        queue: 'test-queue',
+    checkQueue = vitest.fn().mockImplementation((queue: string) => Promise.resolve({
+        queue,
         messageCount: 0,
         consumerCount: 0,
     }));
