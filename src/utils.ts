@@ -34,3 +34,5 @@ export const deepMerge = <T extends object>(target: T, ...sources: Array<Partial
 
     return deepMerge(target, ...sources);
 };
+
+export class TooManyRetriesError extends Error {}
