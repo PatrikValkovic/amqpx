@@ -5,9 +5,25 @@ import { Producer } from '../producer';
 import { ExchangeConsumerQueueOptions, BindingArgs } from './types';
 
 export interface Exchange {
+    /**
+     * Assert the exchange against the rabbit.
+     * Will return the self instances.
+     */
     assert(): Promise<Exchange>;
 
+    /**
+     * Return name of the exchange.
+     * This call will also assert the exchange if not asserted yet before it returns.
+     */
     name(): Promise<string>;
+
+    /**
+     * Bind queue or exchange to this exchange.
+     * This call may assert current exchange if it's not asserted yet.
+     * @param queueOrExchange Queue or exchange to bind to the current exchange.
+     * @param pattern Routing key under which to bind.
+     * @param args
+     */
     bind(queueOrExchange: Queue | Exchange, pattern: string, args?: BindingArgs): Promise<Exchange>;
 
     /**

@@ -2,6 +2,16 @@ import * as amqp from 'amqplib';
 import { Queue } from '../queue';
 import { Exchange } from './exchange';
 
+/**
+ * ExchangeTypes
+ *
+ * @description
+ * The type of exchange to create. Can be one of: 'direct', 'fanout', 'topic', 'headers', 'match'.
+ *
+ * This is the type that is passed as second parameter to `channel.assertExchange` method of amqplib library.
+ *
+ * @see * https://amqp-node.github.io/amqplib/channel_api.html
+ */
 export type ExchangeTypes = Parameters<amqp.Channel['assertExchange']>[1];
 
 export type ExchangeConsumerQueueOptions = Omit<amqp.Options.AssertQueue, 'durable' | 'exclusive'>;

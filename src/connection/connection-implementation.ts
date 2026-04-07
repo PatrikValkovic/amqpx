@@ -38,7 +38,6 @@ export class ConnectionImplementation implements Connection {
 
     async connect() {
         while (this.connectionState === ConnectionState.connecting)
-
             await sleepPromise(this.retryStrategy.waitTimeoutMs);
 
         if (this.connectionState === ConnectionState.connected)
@@ -54,14 +53,12 @@ export class ConnectionImplementation implements Connection {
                 this.eventEmitter.emit('connected', this);
                 this.connection.on('close', () => {
                     this.connection = null;
-                    this.connectionState = ConnectionState.closed;
                     this.connect().catch(() => { /* ignore */ });
                 });
                 return this;
             } catch (error) {
                 this.eventEmitter.emit('error', error);
                 if (this.connectionAttempts >= this.retryStrategy.maxRetries) {
-                    this.connectionState = ConnectionState.closed;
                     this.eventEmitter.emit('connectionRetryExhausted');
                     throw new Error(`Connection could not be established`);
                 }
@@ -77,8 +74,11 @@ export class ConnectionImplementation implements Connection {
         while (this.connectionState === ConnectionState.connecting)
             await sleepPromise(this.retryStrategy.waitTimeoutMs);
 
-        if ([ConnectionState.connected].includes(this.connectionState))
+        if ([ConnectionState.connected].includes(this.connectionState)) {
+            this.connectionState = ConnectionState.closing;
             await this?.connection?.close();
+            this.connectionState = ConnectionState.closed;
+        }
 
         this.eventEmitter.emit('close');
         return Promise.resolve();

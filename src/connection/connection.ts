@@ -7,11 +7,35 @@ import { Exchange } from '../exchange';
 import { ConsumerOptions, Consumer } from '../consumer';
 import { ExchangeConsumerQueueOptions } from '../exchange/types';
 
+/**
+ * State in which the connection can be.
+ */
 export enum ConnectionState {
+    /**
+     * Connection is not created yet and there hasn't been attempt to establish it.
+     * This is the beginning state.
+     */
     preconnect = 'preconnect',
+    /**
+     * The initial connection is being established.
+     */
     connecting = 'connecting',
+    /**
+     * The connection is established and ready to be used.
+     */
     connected = 'connected',
+    /**
+     * The connection is being closed.
+     */
+    closing = 'closing',
+    /**
+     * The connection is being closed.
+     */
     closed = 'closed',
+    // /**
+    //  * The connection has been lost and attempt to reconnect is in progress.
+    //  */
+    // reconnection = 'reconnection', // TODO not implemented yet
 }
 
 export interface Connection {
@@ -41,7 +65,20 @@ export interface Connection {
 
     native(): Promise<amqp.Connection>;
 
-    on(eventName: 'connectionRetryExhausted' | 'close', callback: () => void): Connection;
+    /**
+     * Some other description
+     * @param eventName
+     * @param callback
+     */
+    on(eventName: 'connectionRetryExhausted', callback: () => void): Connection;
+
+    /**
+     * Some description
+     * @param eventName
+     * @param callback
+     */
+    // eslint-disable-next-line @typescript-eslint/unified-signatures
+    on(eventName: 'close', callback: () => void): Connection;
     on(eventName: 'error', callback: (err: unknown) => void): Connection;
     on(eventName: 'connected', callback: (connection: Connection) => void): Connection;
 }
