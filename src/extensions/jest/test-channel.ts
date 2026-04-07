@@ -1,5 +1,5 @@
 import { Channel } from '../../index';
-import { TestExchange, TestProducer, TestQueue } from '.';
+import { TestConsumer, TestExchange, TestProducer, TestQueue } from '.';
 /**
  * Mock implementation of Channel using jest mocks.
  *
@@ -45,11 +45,11 @@ export class TestChannel implements Channel {
     ));
 
     createConsumerForQueue = jest.fn().mockImplementation(() => Promise.resolve(
-        new TestProducer(),
+        new TestConsumer(),
     ));
 
     createConsumerForExchange = jest.fn().mockImplementation(() => Promise.resolve(
-        new TestProducer(),
+        new TestConsumer(),
     ));
 
     native = jest.fn().mockImplementation(() => Promise.resolve(undefined));

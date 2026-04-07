@@ -10,9 +10,10 @@ import { DEFAULT_RETRY_STRATEGY } from './default-retry-strategy';
  */
 export interface RetryStrategy {
     /**
-     * For how long to wait in minimum before application is trying to reconnect.
+     * How often (in ms) to check whether an in-progress connection has finished.
+     * Applies when `connect()` or `close()` is called while a connection attempt is already underway.
      */
-    waitTimeoutMs?: number; // TODO is doc correct?
+    waitTimeoutMs?: number;
 
     /**
      * How much time to wait before next attempt to reconnect in ms.

@@ -16,15 +16,15 @@ export interface Channel {
     createExchange(name: string, type: ExchangeTypes, options?: ExchangeOptions): Promise<Exchange>;
     createQueue(name: string, options?: amqp.Options.AssertQueue): Promise<Queue>;
     /**
-     * Create consumer for queue using current channel.
+     * Create producer for queue using current channel.
      * Each producer/consumer should have separate channel, which this call will not ensure.
-     * Consider using `connection.createConsumerForExchange` method.
+     * Consider using `connection.createProducerForQueue` method.
      */
     createProducerForQueue<T>(queue: Queue, options?: ProducerOptions<T>): Promise<Producer<T>>;
     /**
      * Create producer for exchange using current channel.
      * Each producer/consumer should have separate channel, which this call will not ensure.
-     * Consider using `connection.createConsumerForExchange` method.
+     * Consider using `connection.createProducerForExchange` method.
      */
     createProducerForExchange<T>(exchange: Exchange, options?: ProducerOptions<T>): Promise<Producer<T>>;
     /**

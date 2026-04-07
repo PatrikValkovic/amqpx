@@ -66,14 +66,14 @@ export interface Connection {
     native(): Promise<amqp.ChannelModel>;
 
     /**
-     * Some other description
+     * Emitted when the connection retry attempts have been exhausted.
      * @param eventName
      * @param callback
      */
     on(eventName: 'connectionRetryExhausted', callback: () => void): Connection;
 
     /**
-     * Some description
+     * Emitted when the connection is closed.
      * @param eventName
      * @param callback
      */
