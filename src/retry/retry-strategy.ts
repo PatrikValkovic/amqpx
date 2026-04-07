@@ -1,4 +1,4 @@
-import { ITimeStrategy, linearTimeStrategy } from './time-strategies';
+import { ITimeStrategy, linearBackoff } from './time-strategies';
 import { DEFAULT_RETRY_STRATEGY } from './default-retry-strategy';
 
 /**
@@ -44,7 +44,7 @@ export const normalizeRetryStrategy = (retryStrategy: RetryStrategy): Required<O
     };
     return typeof mergedWithDefault.reconnectionTimeoutMs === 'number' ? {
         ...mergedWithDefault,
-        reconnectionTimeoutMs: linearTimeStrategy(mergedWithDefault.reconnectionTimeoutMs),
+        reconnectionTimeoutMs: linearBackoff(mergedWithDefault.reconnectionTimeoutMs),
     } : {
         ...mergedWithDefault,
         reconnectionTimeoutMs: mergedWithDefault.reconnectionTimeoutMs as ITimeStrategy,

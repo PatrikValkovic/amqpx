@@ -1,5 +1,5 @@
 import { RetryStrategy } from './retry-strategy';
-import { doublingTimeStrategy } from './time-strategies';
+import { exponentialBackoff } from './time-strategies';
 
 /**
  * Default retry strategy that is used thorough *amqp-oop* library, if user doesn't provide its own.
@@ -8,6 +8,6 @@ import { doublingTimeStrategy } from './time-strategies';
  */
 export const DEFAULT_RETRY_STRATEGY = {
     maxRetries: 10,
-    reconnectionTimeoutMs: doublingTimeStrategy(100),
+    reconnectionTimeoutMs: exponentialBackoff(100),
     waitTimeoutMs: 100,
 } as const satisfies Required<RetryStrategy>;
