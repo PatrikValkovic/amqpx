@@ -19,9 +19,6 @@ Ordered roughly by severity.
 **B3. Confirmed-channel publish can deadlock**
 `src/channel/channel-implementation.ts:96–110` — The confirm callback promise has no timeout. If the broker goes away mid-publish, the callback never fires and `await retryLoop(...)` blocks forever, halting the producer permanently.
 
-**B4. Connection reconnect ignores `closing` state**
-`src/connection/connection-implementation.ts:54–57, 70–85` — When `close()` is called, the native `'close'` event can still fire and call `this.connect()`. The sleep loop inside `connect()` does not check for `closing` state, so reconnection races with shutdown, leaving the connection in a corrupt state.
-
 ### High — Memory Leaks
 
 **B5. Consumer `'close'` listener never removed**
@@ -54,9 +51,6 @@ Ordered roughly by severity.
 `src/exchange/exchange-implementation.ts:104–114` — A single binding failure aborts all remaining rebinds, leaving the exchange in a partially-bound state after reconnection. Use `Promise.allSettled()` with individual error handling.
 
 ### Medium — Unhandled Rejections / Swallowed Errors
-
-**B14. Connection auto-reconnect swallows all errors**
-`src/connection/connection-implementation.ts:56` — `.catch(() => { /* ignore */ })` means a permanently broken reconnection is invisible to the application until `connectionRetryExhausted` eventually fires.
 
 **B15. Consumer auto-reconnect swallows all errors**
 `src/consumer/consumer-implementation.ts:27–30` — Same pattern. If `listen()` fails after channel reconnect (e.g., queue deleted), the consumer silently enters a dead state.

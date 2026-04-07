@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import * as amqp from 'amqplib';
-import { DEFAULT_RETRY_STRATEGY, normalizeRetryStrategy, RetryStrategy } from '../retry';
+import { DEFAULT_RETRY_STRATEGY, normalizeRetryStrategy, retryLoop, RetryStrategy } from '../retry';
 import { ITimeStrategy } from '../retry/time-strategies';
 import { Channel, ChannelImplementation } from '../channel';
 import { Exchange } from '../exchange';
@@ -9,15 +9,15 @@ import { ExchangeConsumerQueueOptions } from '../exchange/types';
 import { Queue } from '../queue';
 import { ProducerOptions } from '../producer/types';
 import { Producer } from '../producer';
-import { sleepPromise } from '../utils';
+import { TooManyRetriesError } from '../utils';
 import { Connection, ConnectionState } from './connection';
 
 
 export class ConnectionImplementation implements Connection {
     private readonly eventEmitter = new EventEmitter();
     private readonly retryStrategy: Required<Omit<RetryStrategy, 'reconnectionTimeoutMs'>> & { reconnectionTimeoutMs: ITimeStrategy };
-    private connection: amqp.ChannelModel | null = null;
-    private connectionAttempts = -1;
+    private connection: Promise<amqp.ChannelModel | null> | null = null;
+    private closingHandler: Promise<void> | null = null;
     private connectionState: ConnectionState = ConnectionState.preconnect;
 
     constructor(
@@ -37,52 +37,78 @@ export class ConnectionImplementation implements Connection {
     }
 
     async connect() {
-        while (this.connectionState === ConnectionState.connecting)
-            await sleepPromise(this.retryStrategy.waitTimeoutMs);
-
-        if (this.connectionState === ConnectionState.connected)
+        if (this.connection) {
+            await this.connection;
             return this;
+        }
 
-        for (;;) {
+        this.connection = (async () => {
+            const terminationStates = [ConnectionState.closed, ConnectionState.closing];
+            if (terminationStates.includes(this.connectionState)) {
+                this.connection = null;
+                return null;
+            }
+            this.connectionState = ConnectionState.connecting;
             try {
-                this.connectionState = ConnectionState.connecting;
-                this.connectionAttempts++;
-                this.connection = await amqp.connect(this.options);
-                this.connectionAttempts = 0;
+                const nativeConnection = await retryLoop(
+                    this.retryStrategy,
+                    () => {
+                        if (terminationStates.includes(this.connectionState))
+                            return null;
+                        return amqp.connect(this.options);
+                    },
+                    error => {
+                        this.eventEmitter.emit('error', error);
+                        return true;
+                    },
+                );
+                if (!nativeConnection)
+                    return null;
                 this.connectionState = ConnectionState.connected;
                 this.eventEmitter.emit('connected', this);
-                this.connection.on('close', () => {
+                nativeConnection.on('close', () => {
                     this.connection = null;
+                    if ([ConnectionState.closed, ConnectionState.closing].includes(this.connectionState))
+                        return;
                     this.eventEmitter.emit('reconnecting');
-                    this.connect().catch(() => { /* ignore */ });
+                    this.connect().catch(() => { /* ignore */
+                    });
                 });
-                return this;
-            } catch (error) {
-                this.eventEmitter.emit('error', error);
-                if (this.connectionAttempts >= this.retryStrategy.maxRetries) {
+                return nativeConnection;
+            } catch (err) {
+                this.connection = null;
+                this.connectionState = ConnectionState.closed;
+                if (err instanceof TooManyRetriesError)
                     this.eventEmitter.emit('connectionRetryExhausted');
-                    throw new Error(`Connection could not be established`);
-                }
-                await sleepPromise(this.retryStrategy.reconnectionTimeoutMs(this.connectionAttempts));
+                throw err;
             }
-        }
+        })();
+
+        await this.connection;
+        return this;
     }
 
     async close(): Promise<void> {
         if ([ConnectionState.closed, ConnectionState.preconnect].includes(this.connectionState))
-            return Promise.resolve();
+            return;
 
-        while (this.connectionState === ConnectionState.connecting)
-            await sleepPromise(this.retryStrategy.waitTimeoutMs);
+        if (this.closingHandler)
+            return this.closingHandler;
 
-        if ([ConnectionState.connected].includes(this.connectionState)) {
+        this.closingHandler = (async () => {
             this.connectionState = ConnectionState.closing;
-            await this?.connection?.close();
-            this.connectionState = ConnectionState.closed;
-        }
-
-        this.eventEmitter.emit('close');
-        return Promise.resolve();
+            const connection = await this.connection?.catch(() => { /* ignore */ });
+            try {
+                await connection?.close();
+            } finally {
+                // even when close fails clean up references
+                this.closingHandler = null;
+                this.connection = null;
+                this.connectionState = ConnectionState.closed;
+                this.eventEmitter.emit('close');
+            }
+        })();
+        return this.closingHandler;
     }
 
     state() {
@@ -90,9 +116,13 @@ export class ConnectionImplementation implements Connection {
     }
 
     async native(): Promise<amqp.ChannelModel> {
-        while (!this.connection || this.connectionState !== ConnectionState.connected)
+        const connection = await this.connection;
+        if (!connection || this.connectionState !== ConnectionState.connected)
             await this.connect();
-        return this.connection;
+        const establishedConnection = await this.connection;
+        if (!establishedConnection)
+            throw new Error('Connection is null after connect, this should never happen. If you see this error, report it as a bug please.');
+        return establishedConnection;
     }
 
     createChannel(isConfirmed = false): Channel {

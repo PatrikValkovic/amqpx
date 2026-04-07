@@ -32,17 +32,32 @@ export enum ConnectionState {
      * The connection is being closed.
      */
     closed = 'closed',
-    /**
-     * The connection has been lost and attempt to reconnect is in progress.
-     */
-    reconnection = 'reconnection',
 }
 
 export interface Connection {
+    /**
+     * Establishes the connection. Safe to call concurrently — multiple callers will share the same attempt.
+     * After retries are exhausted ({@link on connectionRetryExhausted}), the connection moves to the
+     * `closed` state, but `connect()` may be called again to start a fresh connection attempt.
+     */
     connect(): Promise<Connection>;
+
+    /**
+     * Returns the current state of the connection.
+     */
     state(): ConnectionState;
+
+    /**
+     * Gracefully closes the connection.
+     * Emits the `close` event after the underlying amqplib connection is fully shut down.
+     * Has no effect if the connection is in `preconnect` or `closed` state.
+     */
     close(): Promise<void>;
 
+    /**
+     * Creates a new channel on this connection.
+     * @param isConfirmed - If true, creates a confirm channel (publisher confirms enabled).
+     */
     createChannel(isConfirmed?: boolean): Channel;
 
     /**
@@ -63,6 +78,10 @@ export interface Connection {
      */
     createConsumerForExchange<T>(exchange: Exchange, options?: ConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>>;
 
+    /**
+     * Returns the underlying amqplib connection. Resolves once the connection is established.
+     * This is intended for internal use.
+     */
     native(): Promise<amqp.ChannelModel>;
 
     /**
