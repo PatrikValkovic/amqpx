@@ -38,7 +38,7 @@ const addJitter = (delay: number, jitterFactor: number) => {
  * @param jitter Jitter factor in [0, 1]. Randomizes the delay within ±`jitter * delay`. Use `0` to disable jitter.
  */
 export const linearBackoff = (delay: number, jitter = 0.25) =>
-    () => addJitter(delay, jitter);
+    (_step: number) => addJitter(delay, jitter);
 
 /**
  * Increase the value each step using formula `multiplier * base^step`.
