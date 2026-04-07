@@ -63,7 +63,7 @@ export interface Connection {
      */
     createConsumerForExchange<T>(exchange: Exchange, options?: ConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>>;
 
-    native(): Promise<amqp.Connection>;
+    native(): Promise<amqp.ChannelModel>;
 
     /**
      * Some other description

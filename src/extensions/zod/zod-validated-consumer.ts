@@ -6,7 +6,7 @@ import { ZodValidationError } from './zod-validation-error';
  * Consumer wrapper that validates received messages using Zod.
  *
  * Note that the schema may transform the message into different type
- * (using e.g. `refine`), and this type wil lbe reflected in generic types.
+ * (using e.g. `refine`), and this type will be reflected in generic types.
  *
  * @example
  * ```ts
@@ -38,7 +38,7 @@ export class ZodValidatedConsumer<InputMessage, AdditionalProperties, OutputMess
      */
     constructor(
         private readonly consumer: Consumer<InputMessage, AdditionalProperties>,
-        private readonly validator: z.ZodType<OutputMessage, z.ZodTypeDef, InputMessage>,
+        private readonly validator: z.ZodType<OutputMessage, InputMessage>,
     ) {}
 
     /**

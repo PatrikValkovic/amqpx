@@ -15,4 +15,10 @@ module.exports = [
             'vitest.config.mts',
         ]
     },
+    {
+        // compatibility issues
+        rules: {
+            '@typescript-eslint/no-empty-function': 'off',
+        }
+    }
 ];

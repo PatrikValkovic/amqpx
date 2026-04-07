@@ -16,7 +16,7 @@ import { Connection, ConnectionState } from './connection';
 export class ConnectionImplementation implements Connection {
     private readonly eventEmitter = new EventEmitter();
     private readonly retryStrategy: Required<Omit<RetryStrategy, 'reconnectionTimeoutMs'>> & { reconnectionTimeoutMs: ITimeStrategy };
-    private connection: amqp.Connection | null = null;
+    private connection: amqp.ChannelModel | null = null;
     private connectionAttempts = -1;
     private connectionState: ConnectionState = ConnectionState.preconnect;
 
@@ -88,7 +88,7 @@ export class ConnectionImplementation implements Connection {
         return this.connectionState;
     }
 
-    async native(): Promise<amqp.Connection> {
+    async native(): Promise<amqp.ChannelModel> {
         while (!this.connection || this.connectionState !== ConnectionState.connected)
             await this.connect();
         return this.connection;

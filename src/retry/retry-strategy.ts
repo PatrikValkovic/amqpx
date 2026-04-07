@@ -1,7 +1,5 @@
 import { ITimeStrategy, linearTimeStrategy } from './time-strategies';
 import { DEFAULT_RETRY_STRATEGY } from './default-retry-strategy';
-// noinspection ES6UnusedImports Allowed for JSDOc link
-import * as timeStrategies from './time-strategies';
 
 /**
  * Retry strategy allowing to specify gaps between retries and maximum
