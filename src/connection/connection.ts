@@ -32,10 +32,10 @@ export enum ConnectionState {
      * The connection is being closed.
      */
     closed = 'closed',
-    // /**
-    //  * The connection has been lost and attempt to reconnect is in progress.
-    //  */
-    // reconnection = 'reconnection', // TODO not implemented yet
+    /**
+     * The connection has been lost and attempt to reconnect is in progress.
+     */
+    reconnection = 'reconnection',
 }
 
 export interface Connection {
@@ -46,9 +46,9 @@ export interface Connection {
     createChannel(isConfirmed?: boolean): Channel;
 
     /**
-     * Create consumer for queue and create new channel for it.
+     * Create producer for queue and create new channel for it.
      */
-    createProducerForQueue<T>(queue: Queue, options?: ProducerOptions<T>): Promise<Producer<T>>;
+    createProducerForQueue<T>(queue: Queue, options?: ProducerOptions<T>, isConfirmed?: boolean): Promise<Producer<T>>;
     /**
      * Create producer for exchange and create new channel for it.
      */
@@ -56,7 +56,7 @@ export interface Connection {
     /**
      * Create consumer of queue and create new channel for it.
      */
-    createConsumerForQueue<T>(queue: Queue, options?: ConsumerOptions<T>, isConfirmed?: boolean): Promise<Consumer<T>>;
+    createConsumerForQueue<T>(queue: Queue, options?: ConsumerOptions<T>): Promise<Consumer<T>>;
     /**
      * Create consumer for exchange and create new channel for it.
      * It will create exclusive queue and bind it to the exchange.
@@ -67,18 +67,34 @@ export interface Connection {
 
     /**
      * Emitted when the connection retry attempts have been exhausted.
-     * @param eventName
-     * @param callback
      */
     on(eventName: 'connectionRetryExhausted', callback: () => void): Connection;
 
     /**
-     * Emitted when the connection is closed.
-     * @param eventName
-     * @param callback
+     * Emitted when the connection is explicitly closed by calling {@link close}.
+     * This event fires after the underlying amqplib connection is fully shut down.
+     * It is NOT emitted when the server drops the connection — in that case,
+     * the `reconnecting` event is emitted instead and the client attempts to reconnect.
+     * Not emitted if the connection was never established (`preconnect` state) or already closed.
      */
-    // eslint-disable-next-line @typescript-eslint/unified-signatures
     on(eventName: 'close', callback: () => void): Connection;
+
+    /**
+     * Emitted once when the server drops the connection and the client begins attempting to reconnect.
+     * Followed by one or more `error` events (one per failed attempt), and then either `connected` on success
+     * or `connectionRetryExhausted` if all retries are exhausted.
+     */
+    on(eventName: 'reconnecting', callback: () => void): Connection;
+
+    /**
+     * Emitted when a connection attempt fails.
+     * The error originates from `amqplib` and is forwarded directly.
+     * This may fire multiple times during reconnection retries before the connection succeeds or `connectionRetryExhausted` is emitted.
+     */
     on(eventName: 'error', callback: (err: unknown) => void): Connection;
+
+    /**
+     * Emitted when the connection is successfully established (or re-established after reconnection).
+     */
     on(eventName: 'connected', callback: (connection: Connection) => void): Connection;
 }

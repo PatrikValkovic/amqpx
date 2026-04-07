@@ -53,6 +53,7 @@ export class ConnectionImplementation implements Connection {
                 this.eventEmitter.emit('connected', this);
                 this.connection.on('close', () => {
                     this.connection = null;
+                    this.eventEmitter.emit('reconnecting');
                     this.connect().catch(() => { /* ignore */ });
                 });
                 return this;
