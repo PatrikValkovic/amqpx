@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import * as amqp from 'amqplib';
 import { Replies } from 'amqplib';
-import { Queue } from '../queue';
+import { Queue, QueueOptions } from '../queue';
 import { ExchangeTypes, Exchange } from '../exchange';
 import { Producer } from '../producer';
 import { ProducerOptions } from '../producer/types';
@@ -14,7 +14,7 @@ export interface Channel {
     close(): Promise<void>;
 
     createExchange(name: string, type: ExchangeTypes, options?: ExchangeOptions): Promise<Exchange>;
-    createQueue(name: string, options?: amqp.Options.AssertQueue): Promise<Queue>;
+    createQueue(name: string, options?: QueueOptions): Promise<Queue>;
     /**
      * Create producer for queue using current channel.
      * Each producer/consumer should have separate channel, which this call will not ensure.

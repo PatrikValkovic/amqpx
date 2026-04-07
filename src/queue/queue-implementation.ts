@@ -1,4 +1,3 @@
-import * as amqp from 'amqplib';
 import { Channel } from '../channel';
 import { Exchange } from '../exchange';
 import { ConsumerImplementation, ConsumerOptions, Consumer } from '../consumer';
@@ -6,7 +5,7 @@ import { ProducerOptions } from '../producer/types';
 import { ProducerImplementation } from '../producer';
 import { predefined } from '../index';
 import { Queue } from './queue';
-import { BindingArgs } from './types';
+import { BindingArgs, QueueOptions } from './types';
 
 export class QueueImplementation implements Queue {
     private asserted = false;
@@ -14,7 +13,7 @@ export class QueueImplementation implements Queue {
     constructor(
         private readonly channel: Channel,
         private readonly queueName: string,
-        private readonly options?: amqp.Options.AssertQueue,
+        private readonly options?: QueueOptions,
     ) {
         this.channel.on('close', () => {
             this.asserted = false;
@@ -25,7 +24,10 @@ export class QueueImplementation implements Queue {
         if (this.asserted)
             return this;
         const channel = await this.channel.native();
-        await channel.assertQueue(this.queueName, this.options);
+        if (this.options?.assert === false)
+            await channel.checkQueue(this.queueName);
+        else
+            await channel.assertQueue(this.queueName, this.options);
         this.asserted = true;
         return this;
     }

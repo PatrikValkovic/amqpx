@@ -1,9 +1,9 @@
 import { EventEmitter } from 'events';
 import * as amqp from 'amqplib';
-import { Options, Replies } from 'amqplib';
+import { Replies } from 'amqplib';
 import { Connection } from '../connection';
 import { Exchange, ExchangeImplementation, ExchangeTypes } from '../exchange';
-import { Queue, QueueImplementation } from '../queue';
+import { Queue, QueueImplementation, QueueOptions } from '../queue';
 import { ProducerOptions } from '../producer/types';
 import { Producer } from '../producer';
 import { ExchangeConsumerQueueOptions, ExchangeOptions } from '../exchange/types';
@@ -125,7 +125,7 @@ export class ChannelImplementation implements Channel {
         throw new Error(`Channel not created`);
     }
 
-    createQueue(name: string, options?: Options.AssertQueue): Promise<Queue> {
+    createQueue(name: string, options?: QueueOptions): Promise<Queue> {
         return new QueueImplementation(this, name, options).assert();
     }
 
