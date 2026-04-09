@@ -10,11 +10,10 @@ import { Queue } from '../queue';
 import { ProducerOptions } from '../producer/types';
 import { Producer } from '../producer';
 import { TooManyRetriesError } from '../utils';
-import { Connection, ConnectionState } from './connection';
+import { Connection, ConnectionEventMap, ConnectionState } from './connection';
 
 
-export class ConnectionImplementation implements Connection {
-    private readonly eventEmitter = new EventEmitter();
+export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> implements Connection {
     private readonly retryStrategy: Required<Omit<RetryStrategy, 'reconnectionTimeoutMs'>> & { reconnectionTimeoutMs: ITimeStrategy };
     private connection: Promise<amqp.ChannelModel | null> | null = null;
     private closingHandler: Promise<void> | null = null;
@@ -24,16 +23,11 @@ export class ConnectionImplementation implements Connection {
         private readonly options: amqp.Options.Connect,
         retryStrategy: RetryStrategy = {},
     ) {
+        super();
         this.retryStrategy = normalizeRetryStrategy({
             ...DEFAULT_RETRY_STRATEGY,
             ...retryStrategy,
         });
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    on(eventName: string, callback: (...args: any[]) => void) {
-        this.eventEmitter.on(eventName, callback);
-        return this;
     }
 
     async connect() {
@@ -58,19 +52,19 @@ export class ConnectionImplementation implements Connection {
                         return amqp.connect(this.options);
                     },
                     error => {
-                        this.eventEmitter.emit('error', error);
+                        this.emit('error', error);
                         return true;
                     },
                 );
                 if (!nativeConnection)
                     return null;
                 this.connectionState = ConnectionState.connected;
-                this.eventEmitter.emit('connected', this);
+                this.emit('connected', this);
                 nativeConnection.on('close', () => {
                     this.connection = null;
                     if ([ConnectionState.closed, ConnectionState.closing].includes(this.connectionState))
                         return;
-                    this.eventEmitter.emit('reconnecting');
+                    this.emit('reconnecting');
                     this.connect().catch(() => { /* ignore */
                     });
                 });
@@ -79,7 +73,7 @@ export class ConnectionImplementation implements Connection {
                 this.connection = null;
                 this.connectionState = ConnectionState.closed;
                 if (err instanceof TooManyRetriesError)
-                    this.eventEmitter.emit('connectionRetryExhausted');
+                    this.emit('connectionRetryExhausted');
                 throw err;
             }
         })();
@@ -105,7 +99,7 @@ export class ConnectionImplementation implements Connection {
                 this.closingHandler = null;
                 this.connection = null;
                 this.connectionState = ConnectionState.closed;
-                this.eventEmitter.emit('close');
+                this.emit('close');
             }
         })();
         return this.closingHandler;

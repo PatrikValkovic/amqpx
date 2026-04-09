@@ -59,8 +59,8 @@ export class ChannelImplementation implements Channel {
 
     async close(): Promise<void> {
         if (this.wrapper.isConfirmed)
-            this.wrapper.channel?.waitForConfirms();
-        return this.wrapper.channel?.close?.() ?? Promise.resolve();
+            await this.wrapper.channel?.waitForConfirms();
+        return this.wrapper.channel?.close?.();
     }
 
     async publish(exchange: string, routingKey: string, content: Buffer, optionsArgs: ChannelPublishOptions): Promise<void> {

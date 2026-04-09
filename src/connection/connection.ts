@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import * as amqp from 'amqplib';
 import { Channel } from '../channel';
 import { Queue } from '../queue';
@@ -34,10 +35,45 @@ export enum ConnectionState {
     closed = 'closed',
 }
 
-export interface Connection {
+/**
+ * Events emitted by a {@link Connection}.
+ */
+export interface ConnectionEventMap {
+    /**
+     * Emitted when the connection retry attempts have been exhausted.
+     */
+    connectionRetryExhausted: [];
+    /**
+     * Emitted when the connection is explicitly closed by calling {@link Connection.close}.
+     * This event fires after the underlying amqplib connection is fully shut down.
+     * It is NOT emitted when the server drops the connection — in that case,
+     * the `reconnecting` event is emitted instead and the client attempts to reconnect.
+     * Not emitted if the connection was never established (`preconnect` state) or already closed.
+     */
+    close: [];
+    /**
+     * Emitted once when the server drops the connection and the client begins attempting to reconnect.
+     * Followed by one or more `error` events (one per failed attempt), and then either `connected` on success
+     * or `connectionRetryExhausted` if all retries are exhausted.
+     */
+    reconnecting: [];
+    /**
+     * Emitted when a connection attempt fails.
+     * The error originates from `amqplib` and is forwarded directly.
+     * This may fire multiple times during reconnection retries before the connection succeeds or
+     * `connectionRetryExhausted` is emitted.
+     */
+    error: [err: unknown];
+    /**
+     * Emitted when the connection is successfully established (or re-established after reconnection).
+     */
+    connected: [connection: Connection];
+}
+
+export interface Connection extends EventEmitter<ConnectionEventMap> {
     /**
      * Establishes the connection. Safe to call concurrently — multiple callers will share the same attempt.
-     * After retries are exhausted ({@link on connectionRetryExhausted}), the connection moves to the
+     * After retries are exhausted ({@link ConnectionEventMap.connectionRetryExhausted}), the connection moves to the
      * `closed` state, but `connect()` may be called again to start a fresh connection attempt.
      */
     connect(): Promise<Connection>;
@@ -83,37 +119,4 @@ export interface Connection {
      * This is intended for internal use.
      */
     native(): Promise<amqp.ChannelModel>;
-
-    /**
-     * Emitted when the connection retry attempts have been exhausted.
-     */
-    on(eventName: 'connectionRetryExhausted', callback: () => void): Connection;
-
-    /**
-     * Emitted when the connection is explicitly closed by calling {@link close}.
-     * This event fires after the underlying amqplib connection is fully shut down.
-     * It is NOT emitted when the server drops the connection — in that case,
-     * the `reconnecting` event is emitted instead and the client attempts to reconnect.
-     * Not emitted if the connection was never established (`preconnect` state) or already closed.
-     */
-    on(eventName: 'close', callback: () => void): Connection;
-
-    /**
-     * Emitted once when the server drops the connection and the client begins attempting to reconnect.
-     * Followed by one or more `error` events (one per failed attempt), and then either `connected` on success
-     * or `connectionRetryExhausted` if all retries are exhausted.
-     */
-    on(eventName: 'reconnecting', callback: () => void): Connection;
-
-    /**
-     * Emitted when a connection attempt fails.
-     * The error originates from `amqplib` and is forwarded directly.
-     * This may fire multiple times during reconnection retries before the connection succeeds or `connectionRetryExhausted` is emitted.
-     */
-    on(eventName: 'error', callback: (err: unknown) => void): Connection;
-
-    /**
-     * Emitted when the connection is successfully established (or re-established after reconnection).
-     */
-    on(eventName: 'connected', callback: (connection: Connection) => void): Connection;
 }

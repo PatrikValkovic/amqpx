@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import { Connection, ConnectionState } from '../../index';
 import { TestProducer } from './test-producer';
 import { TestChannel } from './test-channel';
@@ -22,7 +23,7 @@ import { TestConsumer } from './test-consumer';
  * expect(channel).toBeInstanceOf(TestChannel);
  * ```
  */
-export class TestConnection implements Connection {
+export class TestConnection extends EventEmitter implements Connection {
     close = jest.fn().mockImplementation(() => Promise.resolve());
 
     connect = jest.fn().mockImplementation(() => Promise.resolve(this));
@@ -46,8 +47,6 @@ export class TestConnection implements Connection {
     ));
 
     native = jest.fn().mockResolvedValue(undefined);
-
-    on = jest.fn().mockReturnValue(this);
 
     state = jest.fn().mockReturnValue(ConnectionState.connected);
 }
