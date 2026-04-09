@@ -35,4 +35,24 @@ export const deepMerge = <T extends object>(target: T, ...sources: Array<Partial
     return deepMerge(target, ...sources);
 };
 
+export const last = <T>(arr: T[]) => {
+    const index = arr.length - 1;
+    if (index < 0)
+        return undefined;
+    return arr[index];
+};
+
+export const head = <T>(arr: T[]) => arr[0];
+
+export const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
+
+export const zip = <T, U>(arr1: T[], arr2: U[]) => {
+    const length = Math.min(arr1.length, arr2.length);
+    const result: Array<[T, U]> = [];
+    for (let i = 0; i < length; i++)
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        result.push([arr1[i]!, arr2[i]!]);
+    return result;
+};
+
 export class TooManyRetriesError extends Error {}

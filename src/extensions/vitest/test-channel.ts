@@ -52,7 +52,7 @@ export class TestChannel implements Channel {
         new TestConsumer(),
     ));
 
-    native = vitest.fn().mockImplementation(() => Promise.resolve(undefined));
+    native = vitest.fn().mockImplementation(() => Promise.resolve(this.nativeChannel));
 
     publish = vitest.fn().mockImplementation(() => Promise.resolve());
 
@@ -73,4 +73,16 @@ export class TestChannel implements Channel {
         messageCount: 0,
         consumerCount: 0,
     }));
+
+    consumeResponse = {
+        consumerTag: crypto.randomUUID(),
+    };
+
+    nativeChannel = {
+        cancel: vitest.fn().mockImplementation(() => Promise.resolve()),
+        prefetch: vitest.fn().mockImplementation(() => Promise.resolve()),
+        consume: vitest.fn().mockImplementation(() => Promise.resolve(this.consumeResponse)),
+        ack: vitest.fn(),
+        nack: vitest.fn(),
+    };
 }

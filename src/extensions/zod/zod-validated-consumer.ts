@@ -79,13 +79,6 @@ export class ZodValidatedConsumer<InputMessage, AdditionalProperties, OutputMess
     /**
      * @inheritDoc
      */
-    async setPrefetch(prefetch: number): Promise<void> {
-        await this.consumer.setPrefetch(prefetch);
-    }
-
-    /**
-     * @inheritDoc
-     */
     getQueue(): Queue {
         return this.consumer.getQueue();
     }

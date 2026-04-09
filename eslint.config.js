@@ -17,6 +17,14 @@ module.exports = [
         ]
     },
     {
+        files: [
+          '**/*.spec.ts',
+        ],
+        rules: {
+            '@typescript-eslint/no-non-null-assertion': 'off',
+        }
+    },
+    {
         // compatibility issues
         rules: {
             '@typescript-eslint/no-empty-function': 'off',

@@ -14,8 +14,6 @@ export interface Consumer<Message, AdditionalProperties = Record<string, unknown
 
     on(eventName: 'handlingFailed', callback: (error: unknown) => void): Consumer<Message, AdditionalProperties>;
 
-    setPrefetch(prefetch: number): Promise<void>;
-
     getQueue(): Queue;
 
     getChannel(): Channel;

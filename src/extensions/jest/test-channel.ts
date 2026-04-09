@@ -24,6 +24,18 @@ import { TestConsumer, TestExchange, TestProducer, TestQueue } from '.';
  */
 export class TestChannel implements Channel {
 
+    consumeResponse = {
+        consumerTag: crypto.randomUUID(),
+    };
+
+    nativeChannel = {
+        cancel: jest.fn().mockImplementation(() => Promise.resolve()),
+        prefetch: jest.fn().mockImplementation(() => Promise.resolve()),
+        consume: jest.fn().mockImplementation(() => Promise.resolve(this.consumeResponse)),
+        ack: jest.fn(),
+        nack: jest.fn(),
+    };
+
     connect = jest.fn().mockImplementation(() => Promise.resolve(this));
 
     close = jest.fn().mockImplementation(() => Promise.resolve());
@@ -52,7 +64,7 @@ export class TestChannel implements Channel {
         new TestConsumer(),
     ));
 
-    native = jest.fn().mockImplementation(() => Promise.resolve(undefined));
+    native = jest.fn().mockImplementation(() => Promise.resolve(this.nativeChannel));
 
     publish = jest.fn().mockImplementation(() => Promise.resolve());
 

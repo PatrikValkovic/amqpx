@@ -38,10 +38,6 @@ export class ConsumerImplementation<Message> implements Consumer<Message> {
         return this;
     }
 
-    async setPrefetch(prefetch: number): Promise<void> {
-        (await this.channel.native()).prefetch(prefetch);
-    }
-
     async close(timeout = 30000): Promise<void> {
         const channel = await this.channel.native();
         this.consumer?.consumerTag && await channel.cancel(this.consumer.consumerTag);
