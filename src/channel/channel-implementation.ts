@@ -10,11 +10,10 @@ import { ExchangeConsumerQueueOptions, ExchangeOptions } from '../exchange/types
 import { Consumer, ConsumerOptions } from '../consumer';
 import { DEFAULT_RETRY_STRATEGY, retryLoop } from '../retry';
 import { externallyResolvedPromise } from '../utils';
-import { Channel } from './channel';
+import { Channel, ChannelEventMap } from './channel';
 import { ChannelWrapper, ChannelPublishOptions } from './types';
 
-export class ChannelImplementation implements Channel {
-    private readonly eventEmitter = new EventEmitter();
+export class ChannelImplementation extends EventEmitter<ChannelEventMap> implements Channel {
     private readonly wrapper: ChannelWrapper;
     private isDraining = false;
 
@@ -22,6 +21,7 @@ export class ChannelImplementation implements Channel {
         private readonly connection: Connection,
         publishConfirm: boolean,
     ) {
+        super();
         this.wrapper = {
             channel: null,
             isConfirmed: publishConfirm,
@@ -43,14 +43,14 @@ export class ChannelImplementation implements Channel {
         const { channel } = this.wrapper;
         channel.on('error', error => {
             this.wrapper.channel = null;
-            this.eventEmitter.emit('error', error);
+            this.emit('error', error);
         });
         channel.on(`close`, () => {
             this.wrapper.channel = null;
-            this.eventEmitter.emit('close');
+            this.emit('close');
         });
         channel.on('drain', () => {
-            this.eventEmitter.emit('drain');
+            this.emit('drain');
         });
         resolvePromise();
         this.wrapper.awaiting = undefined;
@@ -83,9 +83,9 @@ export class ChannelImplementation implements Channel {
                         isRecursion: true,
                     }).then(resolve).catch(reject);
                 };
-                this.eventEmitter.once('drain', drainHandler);
+                this.once('drain', drainHandler);
                 timeoutHandler = setTimeout(async () => {
-                    this.eventEmitter.removeListener('drain', drainHandler);
+                    this.removeListener('drain', drainHandler);
                     reject(new Error('Rabbit drain timeout'));
                     await native.close();
                 }, drainTimeout);
@@ -160,22 +160,6 @@ export class ChannelImplementation implements Channel {
             channel: this,
             ...(options ?? {}),
         }, queueOptions);
-    }
-
-    off(event: string, callback: (...args: unknown[]) => void): void {
-        this.eventEmitter.off(event, callback);
-    }
-
-    on(event: string, callback: (...args: unknown[]) => void): void {
-        this.eventEmitter.on(event, callback);
-    }
-
-    once(event: string, callback: (...args: unknown[]) => void): void {
-        this.eventEmitter.once(event, callback);
-    }
-
-    internalEmitter(): EventEmitter {
-        return this.eventEmitter;
     }
 
     async checkQueue(name: string): Promise<Replies.AssertQueue> {

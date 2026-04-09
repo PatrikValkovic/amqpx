@@ -680,10 +680,7 @@ describe('Batch consumer implementation', () => {
             const { consumePromise } = processGeneratedMessages(5);
 
             await sleepPromise(100);
-            const channelCloseCallbacks = channel.once.mock.calls
-                .filter(args => args[0] === 'close')
-                .map(args => args[1]);
-            channelCloseCallbacks.forEach(cb => cb());
+            channel.emit('close');
 
             await consumePromise;
 
@@ -701,10 +698,7 @@ describe('Batch consumer implementation', () => {
             const { consumePromise } = processGeneratedMessages(5);
 
             await sleepPromise(100);
-            const channelCloseCallbacks = channel.once.mock.calls
-                .filter(args => args[0] === 'close')
-                .map(args => args[1]);
-            channelCloseCallbacks.forEach(cb => cb());
+            channel.emit('close');
 
             await consumePromise;
 
@@ -731,10 +725,7 @@ describe('Batch consumer implementation', () => {
             const { consumePromise } = processGeneratedMessages(5);
 
             await sleepPromise(100);
-            const channelCloseCallbacks = channel.once.mock.calls
-                .filter(args => args[0] === 'close')
-                .map(args => args[1]);
-            channelCloseCallbacks.forEach(cb => cb());
+            channel.emit('close');
 
             await consumePromise;
 
@@ -763,10 +754,7 @@ describe('Batch consumer implementation', () => {
             const { consumePromise } = processGeneratedMessages(20);
 
             await sleepPromise(100);
-            const channelCloseCallbacks = channel.once.mock.calls
-                .filter(args => args[0] === 'close')
-                .map(args => args[1]);
-            channelCloseCallbacks.forEach(cb => cb());
+            channel.emit('close');
 
             await consumePromise;
 
@@ -788,10 +776,7 @@ describe('Batch consumer implementation', () => {
             await consumer.listen(listener);
 
             await sleepPromise(100);
-            const channelCloseCallbacks = channel.on.mock.calls
-                .filter(args => args[0] === 'close')
-                .map(args => args[1]);
-            channelCloseCallbacks.forEach(cb => cb());
+            channel.emit('close');
             await sleepPromise(400);
 
             expect(channel.nativeChannel.consume).toHaveBeenCalledTimes(2);

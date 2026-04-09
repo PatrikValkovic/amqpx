@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import { Channel } from '../../index';
 import { TestConsumer, TestExchange, TestProducer, TestQueue } from '.';
 /**
@@ -22,7 +23,12 @@ import { TestConsumer, TestExchange, TestProducer, TestQueue } from '.';
  * expect(exchange).toBeInstanceOf(TestExchange);
  * ```
  */
-export class TestChannel implements Channel {
+export class TestChannel extends EventEmitter implements Channel {
+
+    constructor() {
+        super();
+        this.setMaxListeners(0);
+    }
 
     connect = vitest.fn().mockImplementation(() => Promise.resolve(this));
 
@@ -55,18 +61,6 @@ export class TestChannel implements Channel {
     native = vitest.fn().mockImplementation(() => Promise.resolve(this.nativeChannel));
 
     publish = vitest.fn().mockImplementation(() => Promise.resolve());
-
-    on = vitest.fn().mockImplementation(() => undefined);
-
-    off = vitest.fn().mockImplementation(() => undefined);
-
-    once = vitest.fn().mockImplementation(() => undefined);
-
-    internalEmitter = vitest.fn().mockImplementation(
-        () => {
-            throw new Error('Not implemented for tests');
-        },
-    );
 
     checkQueue = vitest.fn().mockImplementation((queue: string) => Promise.resolve({
         queue,

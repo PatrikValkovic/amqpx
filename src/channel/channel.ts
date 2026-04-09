@@ -9,7 +9,25 @@ import { ConsumerOptions, Consumer } from '../consumer';
 import { ExchangeConsumerQueueOptions, ExchangeOptions } from '../exchange/types';
 import { ChannelPublishOptions } from './types';
 
-export interface Channel {
+/**
+ * Events emitted by a {@link Channel}.
+ */
+export interface ChannelEventMap {
+    /**
+     * Emitted when the underlying amqplib channel encounters an error.
+     */
+    error: [err: unknown];
+    /**
+     * Emitted when the underlying amqplib channel is closed.
+     */
+    close: [];
+    /**
+     * Emitted when the internal write buffer drains after backpressure.
+     */
+    drain: [];
+}
+
+export interface Channel extends EventEmitter<ChannelEventMap> {
     connect(): Promise<Channel>;
     close(): Promise<void>;
 
@@ -53,11 +71,6 @@ export interface Channel {
      * Use `createProducer*` functions instead.
      */
     publish(exchange: string, routingKey: string, content: Buffer, options: ChannelPublishOptions): Promise<void>;
-
-    on(event: string, callback: (...args: unknown[]) => void): void;
-    off(event: string, callback: (...args: unknown[]) => void): void;
-    once(event: string, callback: (...args: unknown[]) => void): void;
-    internalEmitter(): EventEmitter;
 
     checkQueue(name: string): Promise<Replies.AssertQueue>;
 }

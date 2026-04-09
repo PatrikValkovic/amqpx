@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import { Channel } from '../../index';
 import { TestConsumer, TestExchange, TestProducer, TestQueue } from '.';
 /**
@@ -22,7 +23,7 @@ import { TestConsumer, TestExchange, TestProducer, TestQueue } from '.';
  * expect(exchange).toBeInstanceOf(TestExchange);
  * ```
  */
-export class TestChannel implements Channel {
+export class TestChannel extends EventEmitter implements Channel {
 
     consumeResponse = {
         consumerTag: crypto.randomUUID(),
@@ -67,18 +68,6 @@ export class TestChannel implements Channel {
     native = jest.fn().mockImplementation(() => Promise.resolve(this.nativeChannel));
 
     publish = jest.fn().mockImplementation(() => Promise.resolve());
-
-    on = jest.fn().mockImplementation(() => undefined);
-
-    off = jest.fn().mockImplementation(() => undefined);
-
-    once = jest.fn().mockImplementation(() => undefined);
-
-    internalEmitter = jest.fn().mockImplementation(
-        () => {
-            throw new Error('Not implemented for tests');
-        },
-    );
 
     checkQueue = jest.fn().mockImplementation((queue: string) => Promise.resolve({
         queue,
