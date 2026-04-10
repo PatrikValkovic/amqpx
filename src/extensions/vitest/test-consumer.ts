@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import { Consumer } from '../../index';
 import { TestQueue } from './test-queue';
 import { TestChannel } from './test-channel';
@@ -29,12 +30,16 @@ import { TestChannel } from './test-channel';
  * expect(consumer.listen).toBeCalledWith(listener);
  * ```
  */
-export class TestConsumer<T> implements Consumer<T> {
+export class TestConsumer<T> extends EventEmitter implements Consumer<T> {
+
+    constructor() {
+        super();
+        this.setMaxListeners(0);
+    }
+
     close = vitest.fn().mockImplementation(() => Promise.resolve());
 
     listen = vitest.fn().mockImplementation(() => Promise.resolve(this));
-
-    on = vitest.fn().mockImplementation(() => this);
 
     setPrefetch = vitest.fn().mockImplementation(() => Promise.resolve());
 

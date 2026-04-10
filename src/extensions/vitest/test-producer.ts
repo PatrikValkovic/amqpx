@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import { Producer } from '../../index';
 import { TestChannel } from './test-channel';
 
@@ -22,8 +23,11 @@ import { TestChannel } from './test-channel';
  * expect(msg).toBe('test');
  * ```
  */
-export class TestProducer<T> implements Producer<T> {
-    on = vitest.fn().mockImplementation(() => this);
+export class TestProducer<T> extends EventEmitter implements Producer<T> {
+    constructor() {
+        super();
+        this.setMaxListeners(0);
+    }
 
     publish = vitest.fn().mockImplementation(msg => Promise.resolve(msg));
 

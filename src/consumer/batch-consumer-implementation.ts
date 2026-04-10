@@ -12,12 +12,11 @@ import {
     ConsumptionFailedStrategy,
     DEFAULT_CONSUMER_OPTIONS,
 } from './types';
-import { BatchConsumer } from './batch-consumer';
+import { BatchConsumer, BatchConsumerEventMap } from './batch-consumer';
 
-export class BatchConsumerImplementation<Message> implements BatchConsumer<Message> {
+export class BatchConsumerImplementation<Message> extends EventEmitter<BatchConsumerEventMap> implements BatchConsumer<Message> {
     private static readonly DEFAULT_BATCH_SIZE = 20;
 
-    private readonly eventEmitter = new EventEmitter();
     private readonly options: Required<BatchConsumerOptions<Message>>;
     private consumer: amqp.Replies.Consume | null = null;
     private callback: BatchConsumerCallbackFn<Message> | null = null;
@@ -32,6 +31,7 @@ export class BatchConsumerImplementation<Message> implements BatchConsumer<Messa
         private readonly _queue: Queue,
         options: BatchConsumerOptions<Message> = {},
     ) {
+        super();
         this.options = deepMerge({}, DEFAULT_CONSUMER_OPTIONS, options) as typeof DEFAULT_CONSUMER_OPTIONS;
         if (this.effectiveBatchSize === 1 && this.options.batchFailureStrategy === BatchFailureStrategy.Split)
             throw new Error('Cannot have split batch failure strategy when batch size is 1');
@@ -44,12 +44,6 @@ export class BatchConsumerImplementation<Message> implements BatchConsumer<Messa
             }, 100);
         };
         this._channel.on('close', this.channelCloseCallback);
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    on(eventName: string, callback: (...args: any[]) => void): BatchConsumer<Message> {
-        this.eventEmitter.on(eventName, callback);
-        return this;
     }
 
     async close(timeout = 30000): Promise<void> {
@@ -377,7 +371,7 @@ export class BatchConsumerImplementation<Message> implements BatchConsumer<Messa
     }
 
     private processError(message: string) {
-        this.eventEmitter.emit('error', message);
+        this.emit('error', message);
         return new Error(message);
     }
 }

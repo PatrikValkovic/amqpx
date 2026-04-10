@@ -3,11 +3,10 @@ import * as amqp from 'amqplib';
 import { Queue } from '../queue';
 import { Channel } from '../channel';
 import { deepMerge } from '../utils';
-import { Consumer } from './consumer';
+import { Consumer, ConsumerEventMap } from './consumer';
 import { ConsumerCallbackFn, ConsumerOptions, ConsumptionFailedStrategy, DEFAULT_CONSUMER_OPTIONS } from './types';
 
-export class ConsumerImplementation<Message> implements Consumer<Message> {
-    private readonly eventEmitter = new EventEmitter();
+export class ConsumerImplementation<Message> extends EventEmitter<ConsumerEventMap> implements Consumer<Message> {
     private readonly options: Required<ConsumerOptions<Message>>;
     private consumer: amqp.Replies.Consume | null = null;
     private callback: ConsumerCallbackFn<Message> | null = null;
@@ -20,6 +19,7 @@ export class ConsumerImplementation<Message> implements Consumer<Message> {
         private readonly queue: Queue,
         options: ConsumerOptions<Message>,
     ) {
+        super();
         this.options = deepMerge({}, DEFAULT_CONSUMER_OPTIONS, options) as typeof DEFAULT_CONSUMER_OPTIONS;
         // This magic will make sure the implementation tries to reconnect to the channel with
         // some backoff when the connection is lost.
@@ -30,12 +30,6 @@ export class ConsumerImplementation<Message> implements Consumer<Message> {
             }, 100);
         };
         this.channel.on('close', this.channelCloseCallback);
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    on(eventName: string, callback: (...args: any[]) => void): Consumer<Message> {
-        this.eventEmitter.on(eventName, callback);
-        return this;
     }
 
     async close(timeout = 30000): Promise<void> {
@@ -113,7 +107,7 @@ export class ConsumerImplementation<Message> implements Consumer<Message> {
             if (stillConnected && shouldAck)
                 originalChannel.ack(msg);
         } catch (error) {
-            this.eventEmitter.emit('handlingFailed', error);
+            this.emit('handlingFailed', error);
             if (!stillConnected)
                 return;
             switch (this.options.failureStrategy) {

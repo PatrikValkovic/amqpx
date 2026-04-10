@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import { Producer } from '../../index';
 import { TestChannel } from './test-channel';
 
@@ -22,9 +23,7 @@ import { TestChannel } from './test-channel';
  * expect(msg).toBe('test');
  * ```
  */
-export class TestProducer<T> implements Producer<T> {
-    on = jest.fn().mockImplementation(() => this);
-
+export class TestProducer<T> extends EventEmitter implements Producer<T> {
     publish = jest.fn().mockImplementation(msg => Promise.resolve(msg));
 
     getChannel = jest.fn().mockImplementation(() => new TestChannel());

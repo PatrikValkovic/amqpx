@@ -1,2 +1,2 @@
-export { Producer } from './producer';
+export { Producer, ProducerEventMap } from './producer';
 export { ProducerImplementation } from './producer-implementation';

@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import { Channel } from '../channel';
 import { Exchange } from '../exchange';
 import { deepMerge } from '../utils';
-import { Producer } from './producer';
+import { Producer, ProducerEventMap } from './producer';
 import {
     DEFAULT_PRODUCER_OPTIONS,
     ProducerEvents,
@@ -11,8 +11,7 @@ import {
     RoutingKeyGenerator,
 } from './types';
 
-export class ProducerImplementation<T> implements Producer<T> {
-    private readonly eventEmitter = new EventEmitter();
+export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>> implements Producer<T> {
     private readonly options: Required<ProducerOptions<T>>;
 
     constructor(
@@ -20,6 +19,7 @@ export class ProducerImplementation<T> implements Producer<T> {
         private readonly exchange: Exchange,
         options: ProducerOptions<T> = {},
     ) {
+        super();
         this.options = deepMerge({}, DEFAULT_PRODUCER_OPTIONS, options) as typeof DEFAULT_PRODUCER_OPTIONS;
     }
 
@@ -38,7 +38,7 @@ export class ProducerImplementation<T> implements Producer<T> {
             this.options.stringifyMessage(message),
             this.exchange.name(),
         ]);
-        this.eventEmitter.emit(ProducerEvents.beforeSend, message, buffer);
+        this.emit(ProducerEvents.beforeSend, message, buffer);
 
         // Following block tries to resend the message if there is error on the channel.
         // This may result in more-than-once delivery, but in distributed system it should be OK.
@@ -72,12 +72,6 @@ export class ProducerImplementation<T> implements Producer<T> {
         );
 
         return message;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    on(eventName: string, callback: (...args: any[]) => void): Producer<T> {
-        this.eventEmitter.on(eventName, callback);
-        return this;
     }
 
     getChannel() {

@@ -1,12 +1,27 @@
+import { EventEmitter } from 'events';
 import { Channel } from '../channel';
-import { ProducerEvents, ProducerPublishOptions, RoutingKeyGenerator } from './types';
+import { ProducerPublishOptions, RoutingKeyGenerator } from './types';
+
+/**
+ * Events emitted by a {@link Producer}.
+ */
+export interface ProducerEventMap<WholeMessage> {
+    /**
+     * Emitted before a message is serialized and sent to RabbitMQ.
+     */
+    beforeSend: [message: WholeMessage, buffer: Buffer];
+    /**
+     * Emitted after a message has been successfully sent to RabbitMQ.
+     */
+    afterSend: [message: WholeMessage, buffer: Buffer];
+}
 
 /**
  * Represents service sending messages into the RabbitMQ.
  * The generic properties are `Message` (the content published by the client), and `WholeMessage` that can contain
  * additional properties that can be added by the producer implementation.
  */
-export interface Producer<T, WholeMessage = T> {
+export interface Producer<T, WholeMessage = T> extends EventEmitter<ProducerEventMap<WholeMessage>> {
     /**
      * Publish message into the RabbitMQ.
      * @param message Message to publish. Producer implementation may add more properties into the message.
@@ -14,8 +29,6 @@ export interface Producer<T, WholeMessage = T> {
      * @param options Publish options.
      */
     publish(message: T, routingKey?: RoutingKeyGenerator<T>, options?: ProducerPublishOptions): Promise<WholeMessage>;
-
-    on(eventName: keyof typeof ProducerEvents, callback: (msg: WholeMessage, buffer: Buffer) => void): Producer<T, WholeMessage>;
 
     getChannel(): Channel;
 }

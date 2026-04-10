@@ -1,5 +1,6 @@
+import { EventEmitter } from 'events';
 import { type z } from 'zod';
-import { Queue, Channel, ConsumerCallbackFn, Consumer } from '../../index';
+import { Queue, Channel, ConsumerCallbackFn, Consumer, ConsumerEventMap } from '../../index';
 import { ZodValidationError } from './zod-validation-error';
 
 /**
@@ -30,7 +31,7 @@ import { ZodValidationError } from './zod-validation-error';
  * });
  * ```
  */
-export class ZodValidatedConsumer<InputMessage, AdditionalProperties, OutputMessage = InputMessage> implements Consumer<OutputMessage, AdditionalProperties> {
+export class ZodValidatedConsumer<InputMessage, AdditionalProperties, OutputMessage = InputMessage> extends EventEmitter<ConsumerEventMap> implements Consumer<OutputMessage, AdditionalProperties> {
     /**
      * Creates a new instance of ZodValidatedConsumer.
      * @param consumer Consumer to wrap, implementation will reuse downstream implementation except the message validation.
@@ -39,7 +40,10 @@ export class ZodValidatedConsumer<InputMessage, AdditionalProperties, OutputMess
     constructor(
         private readonly consumer: Consumer<InputMessage, AdditionalProperties>,
         private readonly validator: z.ZodType<OutputMessage, InputMessage>,
-    ) {}
+    ) {
+        super();
+        this.consumer.on('handlingFailed', error => this.emit('handlingFailed', error));
+    }
 
     /**
      * @inheritDoc
@@ -65,14 +69,6 @@ export class ZodValidatedConsumer<InputMessage, AdditionalProperties, OutputMess
                 message: parsed.data,
             });
         });
-        return this;
-    }
-
-    /**
-     * @inheritDoc
-     */
-    on(eventName: 'handlingFailed', callback: (error: unknown) => void) {
-        this.consumer.on(eventName, callback);
         return this;
     }
 
