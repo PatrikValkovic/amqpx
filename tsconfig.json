@@ -4,8 +4,11 @@
     "target": "es2016",
     "module": "commonjs",
     "outDir": "dist",
-    "declaration": true,
-    "declarationMap": true,
+    "rootDir": "src",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "removeComments": false,
     "types": [
       "vitest/globals",
       "jest"

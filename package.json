@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit --project tsconfig.test.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "build": "rimraf dist && tsc --project tsconfig.json"
+    "build": "rimraf dist && tsc --project tsconfig.json --removeComments &&  tsc --project tsconfig.json  --declaration --emitDeclarationOnly"
   },
   "repository": {
     "type": "git",
