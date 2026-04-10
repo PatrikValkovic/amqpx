@@ -6,8 +6,14 @@ import { ExchangeConsumerQueueOptions, BindingArgs } from './types';
 
 export interface Exchange {
     /**
-     * Assert the exchange against the rabbit.
-     * Will return the self instances.
+     * Verify the exchange against the broker, according to the configured `assertionMode`.
+     *
+     * - `Assert` (default) — declare the exchange; creates it if absent, throws on config mismatch.
+     * - `Check` — verify the exchange exists without creating it; throws if absent.
+     * - `Passive` — no-op; no network call is made.
+     *
+     * Subsequent calls return immediately once the first call completes successfully.
+     * Returns `this` to allow chaining.
      */
     assert(): Promise<Exchange>;
 

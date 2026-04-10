@@ -4,16 +4,16 @@ import { ConsumerOptions } from '../consumer';
 import { ProducerOptions } from '../producer/types';
 import { Producer, ProducerImplementation } from '../producer';
 import { deepMerge } from '../utils';
-import { BindingArgs, Binding, BindingType, ExchangeConsumerQueueOptions, ExchangeTypes, ExchangeOptions } from './types';
+import { BindingArgs, Binding, BindingType, ExchangeConsumerQueueOptions, ExchangeTypes, ExchangeOptions, ExchangeAssertionMode } from './types';
 import { Exchange } from './exchange';
 
 const DEFAULT_EXCHANGE_OPTIONS = {
-    assert: true,
+    assertionMode: ExchangeAssertionMode.Assert,
 } as const satisfies ExchangeOptions;
 
 export class ExchangeImplementation implements Exchange {
     private readonly options?: ExchangeOptions;
-    private asserted = false;
+    private assertPromise: Promise<void> | null = null;
     private bindings: Binding[] = [];
 
     constructor(
@@ -24,19 +24,33 @@ export class ExchangeImplementation implements Exchange {
     ) {
         this.options = deepMerge({}, DEFAULT_EXCHANGE_OPTIONS, options ?? {});
         this.channel.on('close', () => {
-            this.asserted = false;
+            this.assertPromise = null;
         });
     }
 
     async assert() {
-        if (this.asserted)
+        if (this.assertPromise) {
+            await this.assertPromise;
             return this;
-        const channel = await this.channel.native();
-        if (this.options?.assert)
-            await channel.assertExchange(this.exchangeName, this.exchangeType, this.options);
-        else
-            await channel.checkExchange(this.exchangeName);
-        this.asserted = true;
+        }
+
+        this.assertPromise = (async () => {
+            const channel = await this.channel.native();
+            switch (this.options?.assertionMode) {
+            case ExchangeAssertionMode.Check:
+                await channel.checkExchange(this.exchangeName);
+                break;
+            case ExchangeAssertionMode.Assert:
+                await channel.assertExchange(this.exchangeName, this.exchangeType, this.options);
+                break;
+            case ExchangeAssertionMode.Passive:
+                break;
+            default:
+                throw new Error(`Unknown assertion mode: ${this.options?.assertionMode}`);
+            }
+        })();
+
+        await this.assertPromise;
         await this.rebind();
         return this;
     }

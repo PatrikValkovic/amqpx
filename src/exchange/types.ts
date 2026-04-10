@@ -35,6 +35,38 @@ export type Binding = {
     exchange: Exchange;
 });
 
+/**
+ * Controls how an exchange is verified against the broker when `assert()` is called.
+ *
+ * - `Assert` (default) — declare the exchange, creating it if absent and failing on config mismatch.
+ * - `Check` — verify the exchange exists without creating it; fails if absent.
+ * - `Passive` — skip all broker interaction; no network call is made.
+ */
+export enum ExchangeAssertionMode {
+    /**
+     * Assert the exchange against the broker.
+     * Creates the exchange if it does not exist; throws if it exists with incompatible options.
+     * This is the default mode.
+     */
+    Assert = 'Assert',
+    /**
+     * Only check that the exchange exists on the broker.
+     * Does not create the exchange; throws if it is absent.
+     */
+    Check = 'Check',
+    /**
+     * Skip all broker-side verification.
+     * No network call is made when `assert()` is invoked.
+     */
+    Passive = 'Passive',
+}
+
 export type ExchangeOptions = amqp.Options.AssertExchange & {
-    assert?: boolean;
+    /**
+     * Controls how the exchange is verified against the broker when `assert()` is called.
+     * Defaults to `ExchangeAssertionMode.Assert`.
+     *
+     * @see ExchangeAssertionMode
+     */
+    assertionMode?: ExchangeAssertionMode;
 };
