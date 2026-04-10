@@ -6,7 +6,7 @@ import { TestProducer } from './test-producer';
  * Mock implementation of Queue using vitest mocks.
  *
  * All `create*` methods return test instance of classes from this package.
- * `assert` and `bind` methods are vitest mocks returning current instance.
+ * `assert` and `bindExchange` methods are vitest mocks returning current instance.
  *
  * @example
  * ```ts
@@ -15,7 +15,7 @@ import { TestProducer } from './test-producer';
  * const queue = new TestQueue();
  * // or create from TestChannel, TestConnection, or TestExchange
  *
- * expect(queue.bind).toBeCalledTimes(0);
+ * expect(queue.bindExchange).toBeCalledTimes(0);
  * ```
  */
 export class TestQueue implements Queue {
@@ -23,7 +23,7 @@ export class TestQueue implements Queue {
 
     name = vitest.fn().mockImplementation(() => Promise.resolve('test-queue'));
 
-    bind = vitest.fn().mockImplementation(() => Promise.resolve(this));
+    bindExchange = vitest.fn().mockImplementation(() => Promise.resolve(this));
 
     createConsumer = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),

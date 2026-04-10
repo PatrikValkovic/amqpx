@@ -56,7 +56,6 @@ Ordered roughly by severity.
 ### API Consistency
 
 - **`createConsumerFor*` methods lack `isConfirmed` parameter** — `connection-implementation.ts:105–107`. The `createProducerFor*` counterparts have it; consumers should too for symmetry.
-- **`Promise.resolve(new ...)` vs `async/await` inconsistency** — `queue-implementation.ts:34, 42, 48–50`. Pick one style for factory methods.
 - **Boilerplate repeated in Exchange and Queue** — Assertion caching + channel-close reset is identical in both. Extract into a shared `AssertableResource` base or composition class.
 
 ### Channel Isolation Warning

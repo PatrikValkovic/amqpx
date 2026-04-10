@@ -4,11 +4,12 @@ import { ConsumerOptions } from '../consumer';
 import { ProducerOptions } from '../producer/types';
 import { Producer, ProducerImplementation } from '../producer';
 import { deepMerge } from '../utils';
-import { BindingArgs, Binding, BindingType, ExchangeConsumerQueueOptions, ExchangeTypes, ExchangeOptions, ExchangeAssertionMode } from './types';
+import { AssertionMode } from '../types';
+import { BindingArgs, Binding, BindingType, ExchangeConsumerQueueOptions, ExchangeTypes, ExchangeOptions } from './types';
 import { Exchange } from './exchange';
 
 const DEFAULT_EXCHANGE_OPTIONS = {
-    assertionMode: ExchangeAssertionMode.Assert,
+    assertionMode: AssertionMode.Assert,
 } as const satisfies ExchangeOptions;
 
 export class ExchangeImplementation implements Exchange {
@@ -37,13 +38,13 @@ export class ExchangeImplementation implements Exchange {
         this.assertPromise = (async () => {
             const channel = await this.channel.native();
             switch (this.options?.assertionMode) {
-            case ExchangeAssertionMode.Check:
+            case AssertionMode.Check:
                 await channel.checkExchange(this.exchangeName);
                 break;
-            case ExchangeAssertionMode.Assert:
+            case AssertionMode.Assert:
                 await channel.assertExchange(this.exchangeName, this.exchangeType, this.options);
                 break;
-            case ExchangeAssertionMode.Passive:
+            case AssertionMode.Passive:
                 break;
             default:
                 throw new Error(`Unknown assertion mode: ${this.options?.assertionMode}`);

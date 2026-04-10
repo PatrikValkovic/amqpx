@@ -4,31 +4,53 @@ import { ConsumerImplementation, ConsumerOptions, Consumer } from '../consumer';
 import { ProducerOptions } from '../producer/types';
 import { ProducerImplementation } from '../producer';
 import { predefined } from '../index';
+import { deepMerge } from '../utils';
+import { AssertionMode } from '../types';
 import { Queue } from './queue';
 import { BindingArgs, QueueOptions } from './types';
 
+const DEFAULT_QUEUE_OPTIONS = {
+    assertionMode: AssertionMode.Assert,
+} as const satisfies QueueOptions;
+
 export class QueueImplementation implements Queue {
-    private asserted = false;
+    private readonly options?: QueueOptions;
+    private assertPromise: Promise<void> | null = null;
 
     constructor(
         private readonly channel: Channel,
         private readonly queueName: string,
-        private readonly options?: QueueOptions,
+        options?: QueueOptions,
     ) {
+        this.options = deepMerge({}, DEFAULT_QUEUE_OPTIONS, options ?? {});
         this.channel.on('close', () => {
-            this.asserted = false;
+            this.assertPromise = null;
         });
     }
 
     async assert() {
-        if (this.asserted)
+        if (this.assertPromise) {
+            await this.assertPromise;
             return this;
-        const channel = await this.channel.native();
-        if (this.options?.assert === false)
-            await channel.checkQueue(this.queueName);
-        else
-            await channel.assertQueue(this.queueName, this.options);
-        this.asserted = true;
+        }
+
+        this.assertPromise = (async () => {
+            const channel = await this.channel.native();
+            switch (this.options?.assertionMode) {
+            case AssertionMode.Check:
+                await channel.checkQueue(this.queueName);
+                break;
+            case AssertionMode.Assert:
+                await channel.assertQueue(this.queueName, this.options);
+                break;
+            case AssertionMode.Passive:
+                break;
+            default:
+                throw new Error(`Unknown assertion mode: ${this.options?.assertionMode}`);
+            }
+        })();
+
+        await this.assertPromise;
         return this;
     }
 
@@ -36,7 +58,7 @@ export class QueueImplementation implements Queue {
         return this.assert().then(self => self.queueName);
     }
 
-    async bind(exchange: Exchange, pattern: string, args?: BindingArgs) {
+    async bindExchange(exchange: Exchange, pattern: string, args?: BindingArgs) {
         await exchange.bindQueue(this, pattern, args);
         return this;
     }
@@ -52,7 +74,7 @@ export class QueueImplementation implements Queue {
         return Promise.resolve(
             new ProducerImplementation(options.channel ?? this.channel, exchange, {
                 ...options,
-                routingKey: async () => await this.name(),
+                routingKey: () => this.name(),
             }),
         );
     }

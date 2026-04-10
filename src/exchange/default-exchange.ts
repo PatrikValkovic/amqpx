@@ -1,6 +1,6 @@
 import { Channel } from '../channel';
+import { AssertionMode } from '../types';
 import { ExchangeImplementation } from './exchange-implementation';
-import { ExchangeAssertionMode } from './types';
 
 /**
  * Class representing the default, direct exchange created by the RabbitMQ broker.
@@ -11,7 +11,7 @@ export class DefaultExchange extends ExchangeImplementation {
     constructor(channel: Channel) {
         super(channel, '', 'direct', {
             durable: true,
-            assertionMode: ExchangeAssertionMode.Passive,
+            assertionMode: AssertionMode.Passive,
         });
     }
 }
