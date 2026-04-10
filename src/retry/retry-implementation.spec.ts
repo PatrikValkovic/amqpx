@@ -1,4 +1,4 @@
-import { TooManyRetriesError } from '../utils';
+import { TooManyRetriesError } from '../errors';
 import { retryLoop } from './retry-implementation';
 
 describe('Retry', () => {

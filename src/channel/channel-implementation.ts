@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import * as amqp from 'amqplib';
-import { Replies } from 'amqplib';
+import { ConfirmChannel, Replies } from 'amqplib';
 import { Connection } from '../connection';
 import { Exchange, ExchangeImplementation, ExchangeTypes } from '../exchange';
 import { Queue, QueueImplementation, QueueOptions } from '../queue';
@@ -9,13 +9,15 @@ import { Producer } from '../producer';
 import { ExchangeConsumerQueueOptions, ExchangeOptions } from '../exchange/types';
 import { Consumer, ConsumerOptions } from '../consumer';
 import { DEFAULT_RETRY_STRATEGY, retryLoop } from '../retry';
-import { externallyResolvedPromise } from '../utils';
+import { DrainError } from '../errors';
+import { swallowError } from '../utils';
 import { Channel, ChannelEventMap } from './channel';
 import { ChannelWrapper, ChannelPublishOptions } from './types';
 
 export class ChannelImplementation extends EventEmitter<ChannelEventMap> implements Channel {
     private readonly wrapper: ChannelWrapper;
-    private isDraining = false;
+    private closeHandler: Promise<void> | null = null;
+    private drainPromise: Promise<void> | null = null;
 
     constructor(
         private readonly connection: Connection,
@@ -29,68 +31,88 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
     }
 
     async connect(): Promise<ChannelImplementation> {
-        if (this.wrapper.channel)
+        if (this.wrapper.channel) {
+            await this.wrapper.channel;
             return this;
-        if (this.wrapper.awaiting) {
-            await this.wrapper.awaiting;
-            return this.connect();
         }
 
-        const [promise, resolvePromise] = externallyResolvedPromise();
-        this.wrapper.awaiting = promise;
-        const connection = await this.connection.native();
-        this.wrapper.channel = await (this.wrapper.isConfirmed ? connection.createConfirmChannel() : connection.createChannel());
-        const { channel } = this.wrapper;
-        channel.on('error', error => {
-            this.wrapper.channel = null;
-            this.emit('error', error);
-        });
-        channel.on(`close`, () => {
-            this.wrapper.channel = null;
-            this.emit('close');
-        });
-        channel.on('drain', () => {
-            this.emit('drain');
-        });
-        resolvePromise();
-        this.wrapper.awaiting = undefined;
+        this.wrapper.channel = (async () => {
+            try {
+                const connection = await this.connection.native();
+                const channel = await (this.wrapper.isConfirmed ? connection.createConfirmChannel() : connection.createChannel());
+                channel.on('error', error => {
+                    this.wrapper.channel = null;
+                    this.emit('error', error);
+                });
+                channel.on(`close`, async () => {
+                    this.wrapper.channel = null;
+                    this.emit('close');
+                });
+                channel.on('drain', () => {
+                    this.emit('drain');
+                });
+                return channel;
+            } catch (err) {
+                this.wrapper.channel = null;
+                throw err;
+            }
+        })();
+
+        await this.wrapper.channel;
         return this;
     }
 
     async close(): Promise<void> {
-        if (this.wrapper.isConfirmed)
-            await this.wrapper.channel?.waitForConfirms();
-        return this.wrapper.channel?.close?.();
+        if (!this.wrapper.channel)
+            return;
+
+        this.closeHandler ??= (async () => {
+            try {
+                const wrapper = {
+                    isConfirmed: this.wrapper.isConfirmed,
+                    channel: await this.wrapper.channel,
+                };
+                if (!wrapper.channel)
+                    throw new Error('Channel is empty but app attempted to close it, if you see this please report it');
+                if (wrapper.isConfirmed)
+                    await swallowError((wrapper.channel as ConfirmChannel).waitForConfirms());
+                await swallowError(wrapper.channel.close?.());
+            } finally {
+                this.closeHandler = null;
+                this.wrapper.channel = null;
+            }
+        })();
+
+        return this.closeHandler;
+    }
+
+    createExchange(name: string, type: ExchangeTypes, options?: ExchangeOptions): Promise<Exchange> {
+        return new ExchangeImplementation(this, name, type, options).assert();
+    }
+
+    createQueue(name: string, options?: QueueOptions): Promise<Queue> {
+        return new QueueImplementation(this, name, options).assert();
+    }
+
+    async checkQueue(name: string): Promise<Replies.AssertQueue> {
+        const nativeChannel = await this.native();
+        return nativeChannel.checkQueue(name);
+    }
+
+    async native() {
+        await this.connect();
+        if (this.wrapper.channel)
+            return this.wrapper.channel;
+        throw new Error(`Channel not created`);
     }
 
     async publish(exchange: string, routingKey: string, content: Buffer, optionsArgs: ChannelPublishOptions): Promise<void> {
-        const { drainTimeout, isRecursion = false, retryStrategy = DEFAULT_RETRY_STRATEGY, ...options } = optionsArgs;
+        const { drainTimeout, retryStrategy = DEFAULT_RETRY_STRATEGY, ...options } = optionsArgs;
         const native = await this.native();
 
-        if (this.isDraining) {
-            // internal buffer is full, we need to wait
-            if (isRecursion)
-                throw new Error(`Rabbit drain recursion timeout`);
+        if (this.drainPromise)
+            await this.drainPromise;
 
-            let timeoutHandler: NodeJS.Timeout;
-            await new Promise((resolve, reject) => {
-                const drainHandler = () => {
-                    this.isDraining = false;
-                    if (timeoutHandler)
-                        clearTimeout(timeoutHandler);
-                    this.publish(exchange, routingKey, content, {
-                        ...optionsArgs,
-                        isRecursion: true,
-                    }).then(resolve).catch(reject);
-                };
-                this.once('drain', drainHandler);
-                timeoutHandler = setTimeout(async () => {
-                    this.removeListener('drain', drainHandler);
-                    reject(new Error('Rabbit drain timeout'));
-                    await native.close();
-                }, drainTimeout);
-            });
-        }
 
         let publishResult: boolean;
         if (!this.wrapper.isConfirmed) {
@@ -108,29 +130,29 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
                 err => err.message === 'message nacked',
             );
         }
-
-        if (publishResult) {
-            this.isDraining = false;
+        if (publishResult)
             return;
+
+        if (!this.drainPromise) {
+            this.drainPromise = new Promise<void>((resolve, reject) => {
+                let timeoutHandler: NodeJS.Timeout;
+                const drainHandler = () => {
+                    clearTimeout(timeoutHandler);
+                    this.drainPromise = null;
+                    resolve();
+                };
+                this.once('drain', drainHandler);
+                timeoutHandler = setTimeout(async () => {
+                    this.removeListener('drain', drainHandler);
+                    this.drainPromise = null;
+                    reject(new DrainError('Rabbit drain timeout'));
+                    await native.close();
+                }, drainTimeout);
+            });
         }
 
-        this.isDraining = true;
+        await this.drainPromise;
         await this.publish(exchange, routingKey, content, optionsArgs);
-    }
-
-    async native() {
-        await this.connect();
-        if (this.wrapper.channel)
-            return this.wrapper.channel;
-        throw new Error(`Channel not created`);
-    }
-
-    createQueue(name: string, options?: QueueOptions): Promise<Queue> {
-        return new QueueImplementation(this, name, options).assert();
-    }
-
-    createExchange(name: string, type: ExchangeTypes, options?: ExchangeOptions): Promise<Exchange> {
-        return new ExchangeImplementation(this, name, type, options).assert();
     }
 
     createProducerForQueue<T>(queue: Queue, options: ProducerOptions<T> = {}): Promise<Producer<T>> {
@@ -147,7 +169,6 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
         });
     }
 
-
     createConsumerForQueue<T>(queue: Queue, options?: ConsumerOptions<T>): Promise<Consumer<T>> {
         return queue.createConsumer({
             channel: this,
@@ -160,10 +181,5 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
             channel: this,
             ...(options ?? {}),
         }, queueOptions);
-    }
-
-    async checkQueue(name: string): Promise<Replies.AssertQueue> {
-        const nativeChannel = await this.native();
-        return nativeChannel.checkQueue(name);
     }
 }

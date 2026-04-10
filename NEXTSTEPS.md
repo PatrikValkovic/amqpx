@@ -10,14 +10,8 @@ Ordered roughly by severity.
 
 ### Critical — Data Loss / Deadlock
 
-**B1. `waitForConfirms()` not awaited on channel close**
-`src/channel/channel-implementation.ts:60–63` — `close()` calls `waitForConfirms()` without `await`. The channel closes immediately, silently dropping in-flight confirmed publishes. Fix: add `await`.
-
 **B2. Lost message acknowledgements during channel close**
 `src/consumer/consumer-implementation.ts:92–142` — The `stillConnected` guard at line 117 only protects the ACK path. For `Requeue` and `Reject` strategies, `nack()` is still called (lines 129/132) regardless of connection state. A channel close mid-processing causes a nack on a closed channel, silently discarding the message.
-
-**B3. Confirmed-channel publish can deadlock**
-`src/channel/channel-implementation.ts:96–110` — The confirm callback promise has no timeout. If the broker goes away mid-publish, the callback never fires and `await retryLoop(...)` blocks forever, halting the producer permanently.
 
 ### High — Memory Leaks
 
@@ -34,9 +28,6 @@ Ordered roughly by severity.
 `src/producer/producer-implementation.ts:47–62` — Each `publish()` schedules a 5-second `setTimeout` plus attaches a channel `'error'` listener. Concurrent publishes accumulate unbounded timers and listeners.
 
 ### High — Race Conditions / State Corruption
-
-**B9. Race condition in `ChannelImplementation.connect()`**
-`src/channel/channel-implementation.ts:31–58` — Two concurrent callers can both observe `wrapper.awaiting` as `undefined`, both attempt to create a channel, and the second overwrites the first. After `resolvePromise()` at line 57, waiting callers recurse into `connect()` without a lock; if the channel is nulled between resolution and the recursive check, they race again.
 
 **B10. Consumer auto-reconnect spawns unbounded concurrent `listen()` calls**
 `src/consumer/consumer-implementation.ts:26–31` — Each `'close'` event fires `setTimeout(() => this.listen(...), 100)` with no guard. Rapid successive close events queue up many concurrent reconnect attempts. No `isClosed` flag prevents reconnection after explicit `close()`.
@@ -55,8 +46,6 @@ Ordered roughly by severity.
 **B15. Consumer auto-reconnect swallows all errors**
 `src/consumer/consumer-implementation.ts:27–30` — Same pattern. If `listen()` fails after channel reconnect (e.g., queue deleted), the consumer silently enters a dead state.
 
-**B16. Drain timeout path leaves listener attached**
-`src/channel/channel-implementation.ts:70–119` — If the drain timeout fires and `removeListener` runs, but the drain event fires shortly after, there is no second-path cleanup guarantee in error scenarios.
 
 ---
 
@@ -65,10 +54,13 @@ Ordered roughly by severity.
 ### Type Safety
 
 - **`any[]` in event handler callbacks** — `connection-implementation.ts:33–34`, `consumer-implementation.ts:35–36`, `producer-implementation.ts:77–78`. Replace with typed overload signatures per event name.
-- **Unsafe `as amqp.Channel` / `as amqp.ConfirmChannel` casts** — `channel-implementation.ts:97–100`. Add a type guard or use discriminated union narrowing.
 - **`ZodValidatedConsumer` type parameter mismatch** — `extensions/zod/zod-validated-consumer.ts:33`. Second generic param of `z.ZodType` should be `z.ZodTypeDef`, not the input message type.
 - **`deepMerge` uses multiple `as any` casts** — `utils.ts:25–29`. Strengthening types here would catch silent option-merging bugs.
 - **`externallyResolvedPromise` requires `// @ts-expect-error`** — `utils.ts:1–8`. The resolve variable assignment is not type-safe; use a safer factory pattern.
+
+### Unbounded Recursion in `publish()` on Repeated Backpressure
+
+`src/channel/channel-implementation.ts:151–152` — After a drain event resolves, the method retries via `await this.publish(...)` (tail recursion). If backpressure recurs on the retry, all concurrent callers recurse again. Each drain cycle adds a stack frame for every waiting publisher. Under sustained backpressure with concurrent producers this will eventually overflow the call stack. Replace the tail recursion with a `while (true)` loop.
 
 ### API Consistency
 
@@ -129,16 +121,6 @@ Exchange bindings are stored on the instance (`this.bindings`). If an Exchange i
 
 ## 4. MISSING FEATURES & EXTENSIONS
 
-### Tier 1 — Critical Production Gaps
-
-| Feature | Why Needed |
-|---------|-----------|
-| **Dead Letter Exchange (DLX) helpers** | Without DLX, poison messages are silently ACK'd and lost on `Drop`. Manual amqplib setup is required today. |
-| **Queue / Message TTL configuration** | Standard for preventing queue pile-up; currently requires raw options passthrough. |
-| **Priority queues** | Common requirement for urgent-vs-batch separation; no convenience API. |
-| **Consumer concurrency / prefetch pool** | Prefetch only controls server-side buffering; no client-side concurrency cap exists. |
-| **Message headers typed abstraction** | Headers exchange and cross-cutting metadata (correlation IDs) require raw amqplib options today. |
-
 ### Tier 2 — Observability (Required for Production Operations)
 
 | Feature | Why Needed |
@@ -155,16 +137,6 @@ Exchange bindings are stored on the instance (`this.bindings`). If an Exchange i
 | **RPC / request-reply pattern** | Very common; requires manual `reply_to`/`correlationId` wiring today. |
 | **Consumer middleware pipeline** | No preprocessing chain (decompression, decryption, validation) without modifying handler code. |
 | **Producer middleware pipeline** | `beforeSend`/`afterSend` hooks exist but are not composable as a chain. |
-| **Message batching in consumer** | Batch processing is more efficient for many workloads; must be implemented manually. |
-
-### Tier 4 — Serialization Ecosystem
-
-Currently only JSON is supported natively and only Zod for validation. The extension pattern from `src/extensions/zod/` is clean and should be replicated for:
-
-- Protocol Buffers (`amqp-oop/protobuf`)
-- MessagePack (`amqp-oop/msgpack`)
-- TypeBox validation (`amqp-oop/typebox`)
-- JSON Schema validation (`amqp-oop/json-schema`)
 
 ### Tier 5 — Testing Improvements
 
@@ -178,14 +150,3 @@ Currently only JSON is supported natively and only Zod for validation. The exten
 
 - **NestJS module** — Decorators (`@RabbitProducer`, `@RabbitConsumer`), DI integration, health check provider
 - **Graceful shutdown improvements** — Parallel consumer shutdown, force-close after timeout with proper NACK of in-flight messages
-
----
-
-## 5. QUICK-WIN FIXES (Low Risk, High Value)
-
-These can be done immediately without architectural changes:
-
-1. Add `await` before `waitForConfirms()` in `channel-implementation.ts:62`.
-2. Add `isClosed` guard in consumer auto-reconnect to prevent reconnection after explicit `close()`.
-3. Use `Promise.allSettled()` instead of `Promise.all()` in `rebind()` to prevent partial rebind failure.
-4. Remove `channelCloseCallback` listener in the timeout branch of `consumer.close()`.

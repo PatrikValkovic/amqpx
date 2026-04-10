@@ -8,4 +8,4 @@ export * from './exchange';
 export * from './consumer';
 export * from './producer';
 export { predefined };
-export { TooManyRetriesError } from './utils';
+export * from './errors';

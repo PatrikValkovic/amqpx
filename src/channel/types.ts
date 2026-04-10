@@ -3,13 +3,12 @@ import { ProducerPublishOptions } from '../producer/types';
 
 export type ChannelPublishOptions = ProducerPublishOptions & {
     drainTimeout: number;
-    isRecursion?: boolean;
 };
 
-export type ChannelWrapper = { awaiting?: Promise<void> } & ({
+export type ChannelWrapper = ({
     isConfirmed: true;
-    channel: amqp.ConfirmChannel | null;
+    channel: Promise<amqp.ConfirmChannel> | null;
 } | {
     isConfirmed: false;
-    channel: amqp.Channel | null;
+    channel: Promise<amqp.Channel> | null;
 });

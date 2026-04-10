@@ -1,12 +1,3 @@
-export const externallyResolvedPromise = () => {
-    let resolve: () => void;
-    const promise = new Promise<void>(r => {
-        resolve = r;
-    });
-    // @ts-expect-error Resolve is assigned immediately
-    return [promise, resolve] as const;
-};
-
 export const sleepPromise = (ms: number) =>
     new Promise<void>(resolve => setTimeout(resolve, ms));
 
@@ -55,4 +46,16 @@ export const zip = <T, U>(arr1: T[], arr2: U[]) => {
     return result;
 };
 
-export class TooManyRetriesError extends Error {}
+export function swallowError<T>(callback: () => Promise<T>): Promise<T | null>;
+export function swallowError<T>(callback: () => T): T | null;
+export function swallowError<T>(promise: Promise<T>): Promise<T | null>;
+export function swallowError<T>(callback: ((() => Promise<T>) | (() => T) | Promise<T>)): Promise<T | null> | T | null {
+    try {
+        const result = typeof callback === 'function' ? callback() : callback;
+        if (result instanceof Promise)
+            return result.catch(() => null);
+        return result;
+    } catch {
+        return null;
+    }
+}

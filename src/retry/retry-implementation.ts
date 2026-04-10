@@ -1,4 +1,5 @@
-import { sleepPromise, TooManyRetriesError } from '../utils';
+import { sleepPromise } from '../utils';
+import { TooManyRetriesError } from '../errors';
 import { MaybePromise } from '../types';
 import { normalizeRetryStrategy, RetryStrategy } from './retry-strategy';
 

@@ -9,7 +9,7 @@ import { ExchangeConsumerQueueOptions } from '../exchange/types';
 import { Queue } from '../queue';
 import { ProducerOptions } from '../producer/types';
 import { Producer } from '../producer';
-import { TooManyRetriesError } from '../utils';
+import { TooManyRetriesError } from '../errors';
 import { Connection, ConnectionEventMap, ConnectionState } from './connection';
 
 
