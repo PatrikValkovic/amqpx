@@ -21,9 +21,6 @@ Ordered roughly by severity.
 **B6. `channelCloseCallback` not removed on `close()` timeout**
 `src/consumer/consumer-implementation.ts:45–61` — When the timeout branch triggers (line 50), the promise rejects but the channel `'close'` listener remains attached, leaking forever.
 
-**B8. Producer error-handler timeout accumulates on concurrent publishes**
-`src/producer/producer-implementation.ts:47–62` — Each `publish()` schedules a 5-second `setTimeout` plus attaches a channel `'error'` listener. Concurrent publishes accumulate unbounded timers and listeners.
-
 ### High — Race Conditions / State Corruption
 
 **B10. Consumer auto-reconnect spawns unbounded concurrent `listen()` calls**

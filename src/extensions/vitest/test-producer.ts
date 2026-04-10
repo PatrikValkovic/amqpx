@@ -29,6 +29,8 @@ export class TestProducer<T> extends EventEmitter implements Producer<T> {
         this.setMaxListeners(0);
     }
 
+    close = vitest.fn().mockResolvedValue(undefined);
+
     publish = vitest.fn().mockImplementation(msg => Promise.resolve(msg));
 
     getChannel = vitest.fn().mockImplementation(() => new TestChannel());

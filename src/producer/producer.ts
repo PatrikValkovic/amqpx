@@ -7,13 +7,17 @@ import { ProducerPublishOptions, RoutingKeyGenerator } from './types';
  */
 export interface ProducerEventMap<WholeMessage> {
     /**
-     * Emitted before a message is serialized and sent to RabbitMQ.
+     * Emitted after a message has been serialized, before it is sent to RabbitMQ.
      */
     beforeSend: [message: WholeMessage, buffer: Buffer];
     /**
      * Emitted after a message has been successfully sent to RabbitMQ.
      */
     afterSend: [message: WholeMessage, buffer: Buffer];
+    /**
+     * Emitted when an automatic republish attempt (triggered by a channel error) fails.
+     */
+    republishFailed: [message: WholeMessage, error: unknown];
 }
 
 /**
@@ -28,6 +32,8 @@ export interface Producer<T, WholeMessage = T> extends EventEmitter<ProducerEven
      * @param routingKey Either string of generator that accepts the message and returns its routing key.
      * @param options Publish options.
      */
+    close(): Promise<void>;
+
     publish(message: T, routingKey?: RoutingKeyGenerator<T>, options?: ProducerPublishOptions): Promise<WholeMessage>;
 
     getChannel(): Channel;

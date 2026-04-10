@@ -24,6 +24,8 @@ import { TestChannel } from './test-channel';
  * ```
  */
 export class TestProducer<T> extends EventEmitter implements Producer<T> {
+    close = jest.fn().mockResolvedValue(undefined);
+
     publish = jest.fn().mockImplementation(msg => Promise.resolve(msg));
 
     getChannel = jest.fn().mockImplementation(() => new TestChannel());

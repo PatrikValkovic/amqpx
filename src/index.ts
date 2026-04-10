@@ -8,3 +8,4 @@ export * from './consumer';
 export * from './producer';
 export * from './errors';
 export * from './types';
+export * from './graceful-shutdown';

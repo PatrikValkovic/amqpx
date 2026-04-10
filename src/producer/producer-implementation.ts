@@ -5,6 +5,7 @@ import { deepMerge } from '../utils';
 import { Producer, ProducerEventMap } from './producer';
 import {
     DEFAULT_PRODUCER_OPTIONS,
+    InFlightEntry,
     ProducerEvents,
     ProducerOptions,
     ProducerPublishOptions,
@@ -13,6 +14,9 @@ import {
 
 export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>> implements Producer<T> {
     private readonly options: Required<ProducerOptions<T>>;
+    private readonly inFlight = new Set<InFlightEntry<T>>();
+    private readonly interval: ReturnType<typeof setInterval>;
+    private closed = false;
 
     constructor(
         private readonly channel: Channel,
@@ -21,13 +25,46 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
     ) {
         super();
         this.options = deepMerge({}, DEFAULT_PRODUCER_OPTIONS, options) as typeof DEFAULT_PRODUCER_OPTIONS;
+
+        this.channel.on('error', this.handleChannelError);
+
+        this.interval = setInterval(() => {
+            const now = performance.now();
+            for (const entry of this.inFlight) {
+                if (entry.expiresAt <= now)
+                    this.inFlight.delete(entry);
+            }
+        }, Math.max(100, this.options.errorWindow));
     }
+
+    async close(): Promise<void> {
+        this.closed = true;
+        clearInterval(this.interval);
+        this.channel.off('error', this.handleChannelError);
+    }
+
+    private readonly handleChannelError = () => {
+        const now = performance.now();
+        for (const entry of this.inFlight) {
+            if (entry.expiresAt >= now) {
+                // Remove from in-flight before retrying; if the republish fails it will be
+                // re-added to inFlight by the recursive publish() call.
+                this.inFlight.delete(entry);
+                this.publish(entry.message, entry.routingKey, entry.options)
+                    .then(() => { /* ignore */ })
+                    .catch(err => this.emit(ProducerEvents.republishFailed, entry.message, err));
+            }
+        }
+    };
 
     async publish(
         message: T,
         routingKey?: RoutingKeyGenerator<T>,
         options?: ProducerPublishOptions,
     ) {
+        if (this.closed)
+            throw new Error('Producer is closed');
+
         const finalOptions = deepMerge({}, this.options, {
             ...(routingKey ? { routingKey } : {}),
             ...(options ? { options } : {}),
@@ -38,38 +75,28 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
             this.options.stringifyMessage(message),
             this.exchange.name(),
         ]);
+
         this.emit(ProducerEvents.beforeSend, message, buffer);
-
-        // Following block tries to resend the message if there is error on the channel.
-        // This may result in more-than-once delivery, but in distributed system it should be OK.
-        // Because there is no direct feedback from Rabbit (for non-confirmed channels),
-        // we setup 5s window within which all the messages are considered failed and app will try to resend them.
-        let publishWithError = false;
-        let publishErrorTimer: NodeJS.Timeout;
-        const publishErrorHandler = () => {
-            publishWithError = true;
-            if (publishErrorTimer)
-                clearTimeout(publishErrorTimer);
-            this.channel.off('error', publishErrorHandler);
-            this.publish(message, routingKey, options)
-                .then(() => { /* ignore */ })
-                .catch(() => { /* ignore */ });
-        };
-        publishErrorTimer = setTimeout(() => {
-            if (!publishWithError)
-                this.channel.off('error', publishErrorHandler);
-        }, this.options.errorWindow);
-        this.channel.once('error', publishErrorHandler);
-
         await this.channel.publish(
             exchangeName,
             actualKey,
             buffer,
             {
-                ...finalOptions.options,
+                retryStrategy: this.options.retryStrategy,
                 drainTimeout: this.options.drainTimeout,
+                ...finalOptions.options,
             },
         );
+
+        // Global interval will remove this entry once the window expires.
+        this.inFlight.add({
+            message,
+            routingKey,
+            options,
+            expiresAt: performance.now() + this.options.errorWindow,
+        });
+
+        this.emit(ProducerEvents.afterSend, message, buffer);
 
         return message;
     }
