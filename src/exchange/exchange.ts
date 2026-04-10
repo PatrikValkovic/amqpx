@@ -24,13 +24,22 @@ export interface Exchange {
     name(): Promise<string>;
 
     /**
-     * Bind queue or exchange to this exchange.
-     * This call may assert current exchange if it's not asserted yet.
-     * @param queueOrExchange Queue or exchange to bind to the current exchange.
+     * Bind a queue to this exchange.
+     * This call may assert the current exchange if it's not asserted yet.
+     * @param queue Queue to bind to the current exchange.
      * @param pattern Routing key under which to bind.
      * @param args
      */
-    bind(queueOrExchange: Queue | Exchange, pattern: string, args?: BindingArgs): Promise<Exchange>;
+    bindQueue(queue: Queue, pattern: string, args?: BindingArgs): Promise<Exchange>;
+
+    /**
+     * Bind another exchange to this exchange.
+     * This call may assert the current exchange if it's not asserted yet.
+     * @param exchange Exchange to bind to the current exchange.
+     * @param pattern Routing key under which to bind.
+     * @param args
+     */
+    bindExchange(exchange: Exchange, pattern: string, args?: BindingArgs): Promise<Exchange>;
 
     /**
      * Create consumer for current exchange.

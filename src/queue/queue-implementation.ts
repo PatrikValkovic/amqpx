@@ -37,7 +37,7 @@ export class QueueImplementation implements Queue {
     }
 
     async bind(exchange: Exchange, pattern: string, args?: BindingArgs) {
-        await exchange.bind(this, pattern, args);
+        await exchange.bindQueue(this, pattern, args);
         return this;
     }
 
@@ -56,5 +56,4 @@ export class QueueImplementation implements Queue {
             }),
         );
     }
-
 }

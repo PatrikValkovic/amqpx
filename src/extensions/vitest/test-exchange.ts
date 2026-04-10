@@ -5,7 +5,7 @@ import { TestConsumer, TestProducer } from '.';
  * Mock implementation of Exchange using vitest mocks.
  *
  * All `create*` methods return test classes from this package.
- * `assert` and `bind` methods are vitest mocks returning current instance.
+ * `assert`, `bindQueue`, and `bindExchange` methods are vitest mocks returning current instance.
  *
  * @example
  * ```ts
@@ -14,7 +14,7 @@ import { TestConsumer, TestProducer } from '.';
  * const exchange = new TestExchange();
  * // or create from TestChannel or TestConnection
  *
- * expect(exchange.bind).toBeCalledTimes(0);
+ * expect(exchange.bindQueue).toBeCalledTimes(0);
  * ```
  */
 export class TestExchange implements Exchange {
@@ -22,7 +22,9 @@ export class TestExchange implements Exchange {
 
     name = vitest.fn().mockImplementation(() => Promise.resolve('test-exchange'));
 
-    bind = vitest.fn().mockImplementation(() => Promise.resolve(this));
+    bindQueue = vitest.fn().mockImplementation(() => Promise.resolve(this));
+
+    bindExchange = vitest.fn().mockImplementation(() => Promise.resolve(this));
 
     createConsumer = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),

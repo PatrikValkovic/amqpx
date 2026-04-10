@@ -1,5 +1,5 @@
 import { Channel } from '../channel';
-import { Queue, QueueImplementation } from '../queue';
+import { Queue } from '../queue';
 import { ConsumerOptions } from '../consumer';
 import { ProducerOptions } from '../producer/types';
 import { Producer, ProducerImplementation } from '../producer';
@@ -59,13 +59,7 @@ export class ExchangeImplementation implements Exchange {
         return this.assert().then(self => self.exchangeName);
     }
 
-    async bind(queueOrExchange: Queue | Exchange, pattern: string, args?: BindingArgs) {
-        if (queueOrExchange instanceof QueueImplementation)
-            return this.bindQueue(queueOrExchange, pattern, args);
-        return this.bindExchange(queueOrExchange, pattern, args);
-    }
-
-    private async bindQueue(queue: Queue, pattern: string, args?: BindingArgs) {
+    async bindQueue(queue: Queue, pattern: string, args?: BindingArgs) {
         const [thisName, queueName] = await Promise.all([
             this.name(),
             queue.name(),
@@ -90,7 +84,7 @@ export class ExchangeImplementation implements Exchange {
         return this;
     }
 
-    private async bindExchange(exchange: Exchange, pattern: string, args?: BindingArgs) {
+    async bindExchange(exchange: Exchange, pattern: string, args?: BindingArgs) {
         const [thisName, exchangeName] = await Promise.all([
             this.name(),
             exchange.name(),
@@ -116,15 +110,16 @@ export class ExchangeImplementation implements Exchange {
     }
 
     private async rebind() {
-        await Promise.all(
+        const promises = await Promise.allSettled(
             this.bindings.map(
-                binding => this.bind(
-                    binding.type === BindingType.queue ? binding.queue : binding.exchange,
-                    binding.pattern,
-                    binding.args,
-                ),
+                binding => (binding.type === BindingType.queue
+                    ? this.bindQueue(binding.queue, binding.pattern, binding.args)
+                    : this.bindExchange(binding.exchange, binding.pattern, binding.args)),
             ),
         );
+        const failedPromise = promises.find(p => p.status === 'rejected');
+        if (failedPromise)
+            throw failedPromise.reason;
     }
 
     async createConsumer<T>(options: ConsumerOptions<T> = {}, queueOptions: ExchangeConsumerQueueOptions = {}) {

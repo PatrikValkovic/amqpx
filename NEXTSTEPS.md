@@ -21,9 +21,6 @@ Ordered roughly by severity.
 **B6. `channelCloseCallback` not removed on `close()` timeout**
 `src/consumer/consumer-implementation.ts:45–61` — When the timeout branch triggers (line 50), the promise rejects but the channel `'close'` listener remains attached, leaking forever.
 
-**B7. Exchange and Queue `'close'` listeners accumulate**
-`src/exchange/exchange-implementation.ts:26–28` and `src/queue/queue-implementation.ts:19–21` — Both register a channel `'close'` listener in the constructor and never remove it.
-
 **B8. Producer error-handler timeout accumulates on concurrent publishes**
 `src/producer/producer-implementation.ts:47–62` — Each `publish()` schedules a 5-second `setTimeout` plus attaches a channel `'error'` listener. Concurrent publishes accumulate unbounded timers and listeners.
 
@@ -34,12 +31,6 @@ Ordered roughly by severity.
 
 **B11. Consumer uses stale channel reference for ack/nack**
 `src/consumer/consumer-implementation.ts:92–96` — `originalChannel` is captured at `listen()` time. If the channel is internally recreated, all ack/nack calls after reconnection target the old, closed channel.
-
-**B12. Binding deduplication calls amqplib redundantly**
-`src/exchange/exchange-implementation.ts:65, 90` — The `every()` guard prevents adding to the local `bindings` array but does NOT prevent calling `channel.bindQueue/bindExchange` on RabbitMQ when a duplicate bind is attempted. Local state diverges from broker state.
-
-**B13. `rebind()` uses `Promise.all()` — partial rebind on failure**
-`src/exchange/exchange-implementation.ts:104–114` — A single binding failure aborts all remaining rebinds, leaving the exchange in a partially-bound state after reconnection. Use `Promise.allSettled()` with individual error handling.
 
 ### Medium — Unhandled Rejections / Swallowed Errors
 
