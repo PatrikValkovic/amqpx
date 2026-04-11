@@ -1,8 +1,10 @@
 import { describe, test, expect, afterEach, vi } from 'vitest';
 import * as amqp from 'amqplib';
 import { ConnectionImplementation, ConnectionState } from '../../src';
-import { DIRECT_OPTIONS } from '../helpers/broker-urls';
+import { DIRECT_OPTIONS, PROXIED_OPTIONS } from '../helpers/broker-urls';
 import { RABBIT_CONTAINER, startContainer, stopContainer } from '../helpers/docker';
+import { withToxic } from '../helpers/toxiproxy';
+import { sleepPromise } from '../../src/utils';
 
 const connectRef = vi.hoisted(() => ({
     fn: null as ((...args: Parameters<typeof import('amqplib').connect>) => ReturnType<typeof import('amqplib').connect>) | null,
@@ -22,7 +24,10 @@ describe('Connection integration', () => {
 
     afterEach(async () => {
         vi.mocked(amqp.connect).mockImplementation((...args) => connectRef.fn!(...args));
-        await conn?.close().catch(() => { /* already closed or never opened */ });
+        await Promise.race([
+            conn?.close().catch(() => { /* already closed or never opened */ }),
+            sleepPromise(100),
+        ]);
     });
 
     describe('connect', () => {
@@ -142,6 +147,18 @@ describe('Connection integration', () => {
             await stopContainer(RABBIT_CONTAINER);
             await vi.waitFor(() => expect(exhaustedMock).toHaveBeenCalledTimes(1), { timeout: 20_000 });
             expect(conn.state()).toBe(ConnectionState.closed);
+        });
+    });
+
+    describe('networking', () => {
+        test('connects successfully with 50ms upstream and 50ms downstream latency', async () => {
+            conn = new ConnectionImplementation(PROXIED_OPTIONS);
+            await withToxic('rabbit', { type: 'latency', stream: 'upstream', toxicity: 1, attributes: { latency: 50 } }, () =>
+                withToxic('rabbit', { type: 'latency', stream: 'downstream', toxicity: 1, attributes: { latency: 50 } }, async () => {
+                    await conn.connect();
+                    expect(conn.state()).toBe(ConnectionState.connected);
+                }),
+            );
         });
     });
 });

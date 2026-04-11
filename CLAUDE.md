@@ -38,7 +38,7 @@ Each layer expose factory methods to create layer below (e.g. `Channel.queue()` 
 | Queue | `/queue` | assert, bind to exchange, create consumer/producer |
 | Producer | `/producer` | Generic `<T>`, serialization, routing key fn, `beforeSend`/`afterSend` hooks, drain backpressure |
 | Consumer | `/consumer` | Generic `<Message>`, failure strategies (Drop/Requeue/Reject), prefetch, auto-reconnect |
-| Retry | `/retry` | `RetryStrategy` with pluggable `ITimeStrategy` (linear, exponential); used by Connection |
+| Retry | `/retry` | `RetryStrategy` with pluggable `TimeStrategy` (linear, exponential); used by Connection |
 
 ### Extensions (`src/extensions/`)
 

@@ -9,13 +9,13 @@ describe('Retry', () => {
             expect(typeof result.reconnectionTimeoutMs).toBe('function');
         });
 
-        test('converts numeric reconnectionTimeoutMs to ITimeStrategy', () => {
+        test('converts numeric reconnectionTimeoutMs to TimeStrategy', () => {
             const result = normalizeRetryStrategy({ reconnectionTimeoutMs: 500 });
             expect(typeof result.reconnectionTimeoutMs).toBe('function');
             expect(result.reconnectionTimeoutMs(1)).toBeGreaterThanOrEqual(0);
         });
 
-        test('preserves ITimeStrategy reconnectionTimeoutMs as-is', () => {
+        test('preserves TimeStrategy reconnectionTimeoutMs as-is', () => {
             const strategy = (step: number) => step * 100;
             const result = normalizeRetryStrategy({ reconnectionTimeoutMs: strategy });
             expect(result.reconnectionTimeoutMs).toBe(strategy);

@@ -1,5 +1,5 @@
 export * as predefined from './predefined';
-export { timeStrategies } from './retry';
+export { retryStrategies, RetryStrategy } from './retry';
 export * from './connection';
 export * from './channel';
 export * from './queue';

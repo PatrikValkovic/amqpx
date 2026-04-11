@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import * as amqp from 'amqplib';
 import { DEFAULT_RETRY_STRATEGY, normalizeRetryStrategy, retryLoop, RetryStrategy } from '../retry';
-import { ITimeStrategy } from '../retry/time-strategies';
+import { TimeStrategy } from '../retry/time-strategies';
 import { Channel, ChannelImplementation } from '../channel';
 import { Exchange } from '../exchange';
 import { Consumer, ConsumerOptions } from '../consumer';
@@ -13,7 +13,7 @@ import { Connection, ConnectionEventMap, ConnectionState } from './connection';
 
 
 export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> implements Connection {
-    private readonly retryStrategy: Required<Omit<RetryStrategy, 'reconnectionTimeoutMs'>> & { reconnectionTimeoutMs: ITimeStrategy };
+    private readonly retryStrategy: Required<Omit<RetryStrategy, 'reconnectionTimeoutMs'>> & { reconnectionTimeoutMs: TimeStrategy };
     private connection: Promise<amqp.ChannelModel | null> | null = null;
     private closingHandler: Promise<void> | null = null;
     private connectionState: ConnectionState = ConnectionState.preconnect;
@@ -21,6 +21,7 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
     constructor(
         private readonly options: amqp.Options.Connect,
         retryStrategy: RetryStrategy = {},
+        private readonly socketOptions?: unknown,
     ) {
         super();
         this.retryStrategy = normalizeRetryStrategy({
@@ -44,7 +45,7 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
                         const terminationStates = [ConnectionState.closed, ConnectionState.closing];
                         if (terminationStates.includes(this.connectionState))
                             return null;
-                        return amqp.connect(this.options);
+                        return amqp.connect(this.options, this.socketOptions);
                     },
                     error => {
                         this.emit('connectionError', error);
@@ -62,6 +63,9 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
                     this.emit('reconnecting');
                     this.connect().catch(() => { /* ignore */
                     });
+                });
+                nativeConnection.on('error', err => {
+                    this.emit('error', err);
                 });
                 return nativeConnection;
             } catch (err) {

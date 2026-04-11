@@ -2,7 +2,7 @@
  * Function specification for time strategy. It takes step number and returns delay for this step.
  * @param step Step number. Starts from 1.
  */
-export type ITimeStrategy = (step: number) => number;
+export type TimeStrategy = (step: number) => number;
 
 /**
  * Adds jitter to the delay by randomizing it within a symmetric interval around the original value.

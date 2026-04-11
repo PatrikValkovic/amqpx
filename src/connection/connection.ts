@@ -68,6 +68,10 @@ export interface ConnectionEventMap {
      * Emitted when the connection is successfully established (or re-established after reconnection).
      */
     connected: [connection: Connection];
+    /**
+     * Emitted when the underlying amqplib connection encounters an error.
+     */
+    error: [err: unknown];
 }
 
 export interface Connection extends EventEmitter<ConnectionEventMap> {
