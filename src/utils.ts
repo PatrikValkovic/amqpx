@@ -4,9 +4,9 @@ export const sleepPromise = (ms: number) =>
 const isObject = (item: unknown): item is object => (!!item && typeof item === 'object' && !Array.isArray(item));
 
 export const deepMerge = <T extends object>(target: T, ...sources: Array<Partial<T>>): T => {
-    if (!sources.length)
+    if (sources.length === 0)
         return target;
-    const source = sources.shift();
+    const [source, ...restSources] = sources;
 
     if (isObject(target) && isObject(source)) {
         for (const key in source) {
@@ -23,7 +23,7 @@ export const deepMerge = <T extends object>(target: T, ...sources: Array<Partial
         }
     }
 
-    return deepMerge(target, ...sources);
+    return deepMerge(target, ...restSources);
 };
 
 export const last = <T>(arr: T[]) => {

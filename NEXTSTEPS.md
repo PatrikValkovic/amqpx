@@ -13,26 +13,35 @@ Ordered roughly by severity.
 **B2. Lost message acknowledgements during channel close**
 `src/consumer/consumer-implementation.ts:92–142` — The `stillConnected` guard at line 117 only protects the ACK path. For `Requeue` and `Reject` strategies, `nack()` is still called (lines 129/132) regardless of connection state. A channel close mid-processing causes a nack on a closed channel, silently discarding the message.
 
+**B16. `removeProcessedBatches` range compaction silently skips middle indexes**
+`src/consumer/batch-consumer-implementation.ts:311–319` — The `forEach` that compresses sorted indexes into splice ranges calls `return` when a consecutive index is found but never updates `currentEnd`. For a run `[0, 1, 2]`: index `1` is consecutive so the loop returns with `currentEnd` still `0`; index `2` then fails the `currentEnd + 1` test, pushes range `[0, 0]`, and starts a new range `[2, 2]`. After `splice(0, 1)` the array shifts by one, making the second `splice(2, 1)` a no-op. The batch at original index `1` is never removed, its messages leak, `currentlyProcessingMessages` is never decremented, the broker holds unacked messages, and `close()` hangs indefinitely. Triggered whenever three or more consecutive batches are acknowledged at once (e.g., with `maxWaitTimeForAck > 0`).
+
 ### High — Memory Leaks
 
 **B5. Consumer `'close'` listener never removed**
-`src/consumer/consumer-implementation.ts:32` — The `channelCloseCallback` registered in the constructor is never cleaned up: not in `close()`, not in any error path. Each consumer instance that is created and destroyed leaves a permanent listener on the channel.
+`src/consumer/consumer-implementation.ts:32`, `src/consumer/batch-consumer-implementation.ts:46` — The `channelCloseCallback` registered in the constructor is never cleaned up: not in `close()`, not in any error path. Each consumer instance that is created and destroyed leaves a permanent listener on the channel.
 
 **B6. `channelCloseCallback` not removed on `close()` timeout**
-`src/consumer/consumer-implementation.ts:45–61` — When the timeout branch triggers (line 50), the promise rejects but the channel `'close'` listener remains attached, leaking forever.
+`src/consumer/consumer-implementation.ts:45–61`, `src/consumer/batch-consumer-implementation.ts:49–65` — When the timeout branch triggers, the promise rejects but the channel `'close'` listener remains attached, leaking forever.
+
+**B17. `parseMessageFn` failure permanently inflates `currentlyProcessingMessages`**
+`src/consumer/batch-consumer-implementation.ts:132–134` — `currentlyProcessingMessages` is incremented before `await parseMessageFn(content)`. If parsing throws, the message is never added to any batch and `removeProcessedBatches` is never called, so the counter is never decremented. `close()` waits for the counter to reach zero and hangs indefinitely. The broker also holds the message unacked until the channel closes and redelivers it.
 
 ### High — Race Conditions / State Corruption
 
 **B10. Consumer auto-reconnect spawns unbounded concurrent `listen()` calls**
-`src/consumer/consumer-implementation.ts:26–31` — Each `'close'` event fires `setTimeout(() => this.listen(...), 100)` with no guard. Rapid successive close events queue up many concurrent reconnect attempts. No `isClosed` flag prevents reconnection after explicit `close()`.
+`src/consumer/consumer-implementation.ts:26–31`, `src/consumer/batch-consumer-implementation.ts:40–45` — Each `'close'` event fires `setTimeout(() => this.listen(...), 100)` with no guard. Rapid successive close events queue up many concurrent reconnect attempts. No `isClosed` flag prevents reconnection after explicit `close()`.
 
 **B11. Consumer uses stale channel reference for ack/nack**
-`src/consumer/consumer-implementation.ts:92–96` — `originalChannel` is captured at `listen()` time. If the channel is internally recreated, all ack/nack calls after reconnection target the old, closed channel.
+`src/consumer/consumer-implementation.ts:92–96`, `src/consumer/batch-consumer-implementation.ts:69–81` — `originalChannel` is captured at `listen()` time. If the channel is internally recreated, all ack/nack calls after reconnection target the old, closed channel. In `BatchConsumerImplementation` the stale capture is compounded: the timer callback additionally closes over `originalChannel` from whichever `messageReceiver` coroutine started the timer, which may be from a previous channel generation.
+
+**B18. `stillConnected` guard is stale for timer-triggered batch processing**
+`src/consumer/batch-consumer-implementation.ts:125–177` — Each `messageReceiver` coroutine registers a `'close'` handler (line 129) that sets `stillConnected.value = false`. For the batch-full path the handler is still live while `handleBatch` awaits, so a channel close is detected correctly. For the timer path `messageReceiver` returns after setting the timer and the `finally` block (line 176) removes the handler immediately — before the timer fires. If the channel closes during the timer delay `stillConnected.value` is never set to `false`, and `handleBatch` proceeds to ACK messages on the closed channel.
 
 ### Medium — Unhandled Rejections / Swallowed Errors
 
 **B15. Consumer auto-reconnect swallows all errors**
-`src/consumer/consumer-implementation.ts:27–30` — Same pattern. If `listen()` fails after channel reconnect (e.g., queue deleted), the consumer silently enters a dead state.
+`src/consumer/consumer-implementation.ts:27–30`, `src/consumer/batch-consumer-implementation.ts:41–44` — If `listen()` fails after channel reconnect (e.g., queue deleted), the consumer silently enters a dead state with no event emitted and no way for the caller to detect failure.
 
 
 ---
