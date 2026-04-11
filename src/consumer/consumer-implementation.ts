@@ -4,7 +4,7 @@ import { Queue } from '../queue';
 import { Channel } from '../channel';
 import { deepMerge } from '../utils';
 import { Consumer, ConsumerEventMap } from './consumer';
-import { ConsumerCallbackFn, ConsumerOptions, ConsumptionFailedStrategy, DEFAULT_CONSUMER_OPTIONS } from './types';
+import { ConsumerCallbackFn, ConsumerOptions, ConsumptionFailureStrategy, DEFAULT_CONSUMER_OPTIONS } from './types';
 
 export class ConsumerImplementation<Message> extends EventEmitter<ConsumerEventMap> implements Consumer<Message> {
     private readonly options: Required<ConsumerOptions<Message>>;
@@ -21,13 +21,13 @@ export class ConsumerImplementation<Message> extends EventEmitter<ConsumerEventM
     ) {
         super();
         this.options = deepMerge({}, DEFAULT_CONSUMER_OPTIONS, options) as typeof DEFAULT_CONSUMER_OPTIONS;
-        // This magic will make sure the implementation tries to reconnect to the channel with
-        // some backoff when the connection is lost.
+        // This make sure the implementation tries to reconnect to the channel
         this.channelCloseCallback = () => {
-            setTimeout(() => {
-                if (this.callback)
-                    this.listen(this.callback).catch(() => { /* ignore */ });
-            }, 100);
+            if (this.callback) {
+                this.listen(this.callback).catch(() => {
+                    void this.close();
+                });
+            }
         };
         this.channel.on('close', this.channelCloseCallback);
     }
@@ -59,7 +59,7 @@ export class ConsumerImplementation<Message> extends EventEmitter<ConsumerEventM
         await channel.prefetch(this.options.prefetch);
         const shouldAck =
             this.options.prefetch > 0 ||
-            this.options.failureStrategy !== ConsumptionFailedStrategy.Drop;
+            this.options.failureStrategy !== ConsumptionFailureStrategy.Drop;
         this.consumer = await channel.consume(
             queueName,
             this.messageReceiver.bind(this, callback, shouldAck, channel),
@@ -111,14 +111,14 @@ export class ConsumerImplementation<Message> extends EventEmitter<ConsumerEventM
             if (!stillConnected)
                 return;
             switch (this.options.failureStrategy) {
-            case ConsumptionFailedStrategy.Drop:
+            case ConsumptionFailureStrategy.Drop:
                 if (shouldAck)
                     await originalChannel.ack(msg);
                 return;
-            case ConsumptionFailedStrategy.Reject:
+            case ConsumptionFailureStrategy.Reject:
                 originalChannel.nack(msg, false, false);
                 return;
-            case ConsumptionFailedStrategy.Requeue:
+            case ConsumptionFailureStrategy.Requeue:
                 originalChannel.nack(msg, false, true);
                 return;
             default:

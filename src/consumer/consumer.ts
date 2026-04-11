@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { Queue } from '../queue/queue';
+import { Queue } from '../queue';
 import { Channel } from '../channel';
 import { ConsumerCallbackFn } from './types';
 

@@ -1,7 +1,7 @@
 import { TestChannel, TestQueue } from '../extensions/vitest';
 import { sleepPromise, zip } from '../utils';
 import { BatchConsumerImplementation } from './batch-consumer-implementation';
-import { ConsumptionFailedStrategy, BatchFailureStrategy } from './types';
+import { ConsumptionFailureStrategy, BatchFailureStrategy } from './types';
 
 describe('Batch consumer implementation', () => {
     let channel: TestChannel;
@@ -327,7 +327,7 @@ describe('Batch consumer implementation', () => {
                 {
                     batchSize: 5,
                     batchFailureStrategy: BatchFailureStrategy.Reject,
-                    failureStrategy: ConsumptionFailedStrategy.Reject,
+                    failureStrategy: ConsumptionFailureStrategy.Reject,
                 },
             );
             const listener = vi.fn().mockImplementation(
@@ -349,7 +349,7 @@ describe('Batch consumer implementation', () => {
                 {
                     batchSize: 5,
                     batchFailureStrategy: BatchFailureStrategy.Reject,
-                    failureStrategy: ConsumptionFailedStrategy.Reject,
+                    failureStrategy: ConsumptionFailureStrategy.Reject,
                 },
             );
             const listener = vi.fn()
@@ -376,7 +376,7 @@ describe('Batch consumer implementation', () => {
                 {
                     batchSize: 5,
                     batchFailureStrategy: BatchFailureStrategy.Reject,
-                    failureStrategy: ConsumptionFailedStrategy.Requeue,
+                    failureStrategy: ConsumptionFailureStrategy.Requeue,
                 },
             );
             const listener = vi.fn().mockImplementation(
@@ -398,7 +398,7 @@ describe('Batch consumer implementation', () => {
                 {
                     batchSize: 5,
                     batchFailureStrategy: BatchFailureStrategy.Reject,
-                    failureStrategy: ConsumptionFailedStrategy.Requeue,
+                    failureStrategy: ConsumptionFailureStrategy.Requeue,
                 },
             );
             const listener = vi.fn()
@@ -424,7 +424,7 @@ describe('Batch consumer implementation', () => {
                 {
                     batchSize: 5,
                     batchFailureStrategy: BatchFailureStrategy.Reject,
-                    failureStrategy: ConsumptionFailedStrategy.Drop,
+                    failureStrategy: ConsumptionFailureStrategy.Drop,
                 },
             );
             const listener = vi.fn()
@@ -447,7 +447,7 @@ describe('Batch consumer implementation', () => {
                 {
                     batchSize: 5,
                     batchFailureStrategy: BatchFailureStrategy.Split,
-                    failureStrategy: ConsumptionFailedStrategy.Reject,
+                    failureStrategy: ConsumptionFailureStrategy.Reject,
                 },
             );
             const listener = vi.fn()
@@ -474,7 +474,7 @@ describe('Batch consumer implementation', () => {
                 {
                     batchSize: 5,
                     batchFailureStrategy: BatchFailureStrategy.Split,
-                    failureStrategy: ConsumptionFailedStrategy.Reject,
+                    failureStrategy: ConsumptionFailureStrategy.Reject,
                     maxWaitTimeForAck: 100,
                 },
             );
@@ -499,7 +499,7 @@ describe('Batch consumer implementation', () => {
                 {
                     batchSize: 5,
                     batchFailureStrategy: BatchFailureStrategy.Split,
-                    failureStrategy: ConsumptionFailedStrategy.Drop,
+                    failureStrategy: ConsumptionFailureStrategy.Drop,
                 },
             );
             const listener = vi.fn()
@@ -521,7 +521,7 @@ describe('Batch consumer implementation', () => {
                 {
                     batchSize: 5,
                     batchFailureStrategy: BatchFailureStrategy.Split,
-                    failureStrategy: ConsumptionFailedStrategy.Reject,
+                    failureStrategy: ConsumptionFailureStrategy.Reject,
                 },
             );
             const listener = vi.fn()
@@ -557,7 +557,7 @@ describe('Batch consumer implementation', () => {
                 {
                     batchSize: 5,
                     batchFailureStrategy: BatchFailureStrategy.Split,
-                    failureStrategy: ConsumptionFailedStrategy.Requeue,
+                    failureStrategy: ConsumptionFailureStrategy.Requeue,
                 },
             );
             const listener = vi.fn()
@@ -596,7 +596,7 @@ describe('Batch consumer implementation', () => {
                     batchSize: 5,
                     // @ts-expect-error Invalid failure strategy for test purpose
                     batchFailureStrategy: 'invalid',
-                    failureStrategy: ConsumptionFailedStrategy.Drop,
+                    failureStrategy: ConsumptionFailureStrategy.Drop,
                 },
             );
             const listener = vi.fn()

@@ -5,7 +5,7 @@ import { MaybePromise } from '../types';
 /**
  * How to handle Rabbit message when the processing fails (throws error).
  */
-export enum ConsumptionFailedStrategy {
+export enum ConsumptionFailureStrategy {
     /**
      * It will acknowledge the message as successful. This effectively turns on auto acknowledgement.
      */
@@ -20,10 +20,38 @@ export enum ConsumptionFailedStrategy {
     Reject = 'Reject',
 }
 
+/**
+ * How to handle messages batch when processing fails (throw error).
+ */
+export enum BatchFailureStrategy  {
+    /**
+     * Reject the whole batch, the consumer will not try to reprocess the messages.
+     * Each message in the batch is process according to the `failureStrategy` property.
+     */
+    Reject = 'Reject',
+    /**
+     * Split the batch into individual messages and try to process each message separately.
+     * The listener will be called for each message, where the batch passed into the listener
+     * consists only of the single message.
+     *
+     * If the processing of the message fails again, it is handled according to the `failureStrategy` property.
+     *
+     * Split strategy is not supported when batch size is equal 1.
+     */
+    Split = 'Split',
+}
+
+export enum BatchState {
+    WaitingForData = 'WaitingForData',
+    Processing = 'Processing',
+    Processed = 'Processed',
+    Failed = 'Failed',
+}
+
 export type ConsumerCallbackArgs<Message, AdditionalProperties = Record<string, unknown>> = {
+    channel: Channel;
     message: Message;
     rabbitMessage: amqp.Message;
-    channel: Channel;
 } & AdditionalProperties;
 
 export type BatchConsumerCallbackArgs<Message, AdditionalProperties = Record<string, unknown>> = {
@@ -46,7 +74,7 @@ export type ConsumerOptions<T> = {
      * - Reject: message is rejected and moved into dead letter queue if configured on the consuming queue.
      * - Requeue: message is rejected and moved back into the queue, so different consumer can process it again.
      */
-    failureStrategy?: ConsumptionFailedStrategy;
+    failureStrategy?: ConsumptionFailureStrategy;
     /**
      * Function that parses the message received by Rabbit.
      * By default it calls JSON.parse, but you may provide your own function to parse message in XML or Proto format.
@@ -69,27 +97,6 @@ export type ConsumerOptions<T> = {
     prefetch?: number;
     channel?: Channel | null;
 };
-
-/**
- * How to handle messages batch when processing fails (throw error).
- */
-export enum BatchFailureStrategy  {
-    /**
-     * Reject the whole batch, the consumer will not try to reprocess the messages.
-     * Each message in the batch is process according to the `failureStrategy` property.
-     */
-    Reject = 'Reject',
-    /**
-     * Split the batch into individual messages and try to process each message separately.
-     * The listener will be called for each message, where the batch passed into the listener
-     * consists only of the single message.
-     *
-     * If the processing of the message fails again, it is handled according to the `failureStrategy` property.
-     *
-     * Split strategy is not supported when batch size is equal 1.
-     */
-    Split = 'Split',
-}
 
 export type BatchConsumerOptions<T> = ConsumerOptions<T> & {
     /**
@@ -155,7 +162,7 @@ export type BatchConsumerOptions<T> = ConsumerOptions<T> & {
 };
 
 export const DEFAULT_CONSUMER_OPTIONS = {
-    failureStrategy: ConsumptionFailedStrategy.Reject,
+    failureStrategy: ConsumptionFailureStrategy.Reject,
     parseMessageFn: (payload: Buffer) => JSON.parse(payload.toString()),
     consumeOptions: {},
     prefetch: 0,
@@ -164,14 +171,7 @@ export const DEFAULT_CONSUMER_OPTIONS = {
     maxWaitTimeForAck: 0,
     batchFailureStrategy: BatchFailureStrategy.Reject,
     channel: null,
-} as const satisfies Required<BatchConsumerOptions<unknown>>;
-
-export enum BatchState {
-    WaitingForData = 'WaitingForData',
-    Processing = 'Processing',
-    Processed = 'Processed',
-    Failed = 'Failed',
-}
+} as const satisfies Required<BatchConsumerOptions<unknown>> & Required<ConsumerOptions<unknown>>;
 
 export type BatchRecord<Message> = {
     messages: Array<{

@@ -9,7 +9,7 @@ import {
     BatchFailureStrategy,
     BatchRecord,
     BatchState,
-    ConsumptionFailedStrategy,
+    ConsumptionFailureStrategy,
     DEFAULT_CONSUMER_OPTIONS,
 } from './types';
 import { BatchConsumer, BatchConsumerEventMap } from './batch-consumer';
@@ -99,7 +99,7 @@ export class BatchConsumerImplementation<Message> extends EventEmitter<BatchCons
     }
 
     private get shouldAutoAck() {
-        return this.options.failureStrategy === ConsumptionFailedStrategy.Drop;
+        return this.options.failureStrategy === ConsumptionFailureStrategy.Drop;
     }
 
     private get acknowledgeDelay() {
@@ -235,17 +235,17 @@ export class BatchConsumerImplementation<Message> extends EventEmitter<BatchCons
         indexOfBatch: number,
     ) {
         switch (this.options.failureStrategy) {
-        case ConsumptionFailedStrategy.Drop:
+        case ConsumptionFailureStrategy.Drop:
             batch.state = BatchState.Processed;
             await this.planMessageAcknowledgment(stillConnected, originalChannel);
             break;
 
-        case ConsumptionFailedStrategy.Requeue:
+        case ConsumptionFailureStrategy.Requeue:
             this.nackMessages(originalChannel, batch, indexOfBatch, true);
             this.removeProcessedBatches(batch);
             break;
 
-        case ConsumptionFailedStrategy.Reject:
+        case ConsumptionFailureStrategy.Reject:
             this.nackMessages(originalChannel, batch, indexOfBatch, false);
             this.removeProcessedBatches(batch);
             break;
