@@ -14,6 +14,7 @@ module.exports = [
             'coverage/**/*',
             'dist/**/*',
             'vitest.config.mts',
+            'vitest.integration.config.mts',
         ]
     },
     {

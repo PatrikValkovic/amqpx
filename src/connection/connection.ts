@@ -63,7 +63,7 @@ export interface ConnectionEventMap {
      * This may fire multiple times during reconnection retries before the connection succeeds or
      * `connectionRetryExhausted` is emitted.
      */
-    error: [err: unknown];
+    connectionError: [err: unknown];
     /**
      * Emitted when the connection is successfully established (or re-established after reconnection).
      */

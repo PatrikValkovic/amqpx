@@ -7,8 +7,7 @@ import { Exchange } from '../exchange';
 import { Consumer, ConsumerOptions } from '../consumer';
 import { ExchangeConsumerQueueOptions } from '../exchange/types';
 import { Queue } from '../queue';
-import { ProducerOptions } from '../producer/types';
-import { Producer } from '../producer';
+import { ProducerOptions, Producer } from '../producer';
 import { TooManyRetriesError } from '../errors';
 import { Connection, ConnectionEventMap, ConnectionState } from './connection';
 
@@ -37,22 +36,18 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
         }
 
         this.connection = (async () => {
-            const terminationStates = [ConnectionState.closed, ConnectionState.closing];
-            if (terminationStates.includes(this.connectionState)) {
-                this.connection = null;
-                return null;
-            }
             this.connectionState = ConnectionState.connecting;
             try {
                 const nativeConnection = await retryLoop(
                     this.retryStrategy,
                     () => {
+                        const terminationStates = [ConnectionState.closed, ConnectionState.closing];
                         if (terminationStates.includes(this.connectionState))
                             return null;
                         return amqp.connect(this.options);
                     },
                     error => {
-                        this.emit('error', error);
+                        this.emit('connectionError', error);
                         return true;
                     },
                 );
@@ -115,7 +110,7 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
             await this.connect();
         const establishedConnection = await this.connection;
         if (!establishedConnection)
-            throw new Error('Connection is null after connect, this should never happen. If you see this error, report it as a bug please.');
+            throw new Error('Connection is null after connect, this should never happen. If you see this error, report it as a bug.');
         return establishedConnection;
     }
 
