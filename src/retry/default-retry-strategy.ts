@@ -9,5 +9,4 @@ import { exponentialBackoff } from './time-strategies';
 export const DEFAULT_RETRY_STRATEGY = {
     maxRetries: 10,
     reconnectionTimeoutMs: exponentialBackoff(100),
-    waitTimeoutMs: 100,
 } as const satisfies Required<RetryStrategy>;

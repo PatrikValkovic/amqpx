@@ -13,12 +13,6 @@ import { timeStrategies } from './index';
  */
 export interface RetryStrategy {
     /**
-     * How often (in ms) to check whether an in-progress connection has finished.
-     * Applies when `connect()` or `close()` is called while a connection attempt is already underway.
-     */
-    waitTimeoutMs?: number;
-
-    /**
      * How much time to wait before next attempt to reconnect in ms.
      * May be number (it will wait specified amount of ms between reconnects) or time strategy
      * accessible from {@link timeStrategies}.

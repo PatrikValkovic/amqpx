@@ -3,7 +3,7 @@ import { retryLoop } from './retry-implementation';
 
 describe('Retry', () => {
     describe('retryLoop', () => {
-        const zeroDelayStrategy = { reconnectionTimeoutMs: 0, waitTimeoutMs: 0, maxRetries: 3 };
+        const zeroDelayStrategy = { reconnectionTimeoutMs: 0, maxRetries: 3 };
 
         test('returns callback result on first success', async () => {
             const result = await retryLoop(zeroDelayStrategy, () => 42);

@@ -6,7 +6,6 @@ describe('Retry', () => {
         test('fills missing fields from default strategy', () => {
             const result = normalizeRetryStrategy({});
             expect(result.maxRetries).toBe(DEFAULT_RETRY_STRATEGY.maxRetries);
-            expect(result.waitTimeoutMs).toBe(DEFAULT_RETRY_STRATEGY.waitTimeoutMs);
             expect(typeof result.reconnectionTimeoutMs).toBe('function');
         });
 
@@ -25,11 +24,6 @@ describe('Retry', () => {
         test('overrides maxRetries from provided strategy', () => {
             const result = normalizeRetryStrategy({ maxRetries: 5 });
             expect(result.maxRetries).toBe(5);
-        });
-
-        test('overrides waitTimeoutMs from provided strategy', () => {
-            const result = normalizeRetryStrategy({ waitTimeoutMs: 200 });
-            expect(result.waitTimeoutMs).toBe(200);
         });
 
         test('numeric reconnectionTimeoutMs is wrapped in linearBackoff (constant per step)', () => {
