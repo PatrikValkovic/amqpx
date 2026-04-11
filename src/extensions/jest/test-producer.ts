@@ -10,7 +10,7 @@ import { TestChannel } from './test-channel';
  *
  * @example
  * ```ts
- * import { TestProducer } from 'amqp-oop/jest';
+ * import { TestProducer } from 'amqpx/jest';
  *
  * const producer = new TestProducer();
  *

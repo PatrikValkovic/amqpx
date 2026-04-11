@@ -2,7 +2,7 @@ import { RetryStrategy } from './retry-strategy';
 import { exponentialBackoff } from './time-strategies';
 
 /**
- * Default retry strategy that is used thorough *amqp-oop* library, if user doesn't provide its own.
+ * Default retry strategy that is used thorough *amqpx* library, if user doesn't provide its own.
  *
  * It will by default retry 10 times, with exponential delay between retries.
  */

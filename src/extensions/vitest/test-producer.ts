@@ -10,7 +10,7 @@ import { TestChannel } from './test-channel';
  *
  * @example
  * ```ts
- * import { TestProducer } from 'amqp-oop/vitest';
+ * import { TestProducer } from 'amqpx/vitest';
  *
  * const producer = new TestProducer();
  *

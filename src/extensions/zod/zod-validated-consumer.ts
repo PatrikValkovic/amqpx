@@ -11,7 +11,7 @@ import { ZodValidationError } from './zod-validation-error';
  *
  * @example
  * ```ts
- * import { ZodValidatedConsumer } from 'amqp-oop/zod';
+ * import { ZodValidatedConsumer } from 'amqpx/zod';
  *
  * const consumer = new ZodValidatedConsumer(
  *     new TestConsumer(),

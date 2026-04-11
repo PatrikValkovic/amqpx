@@ -10,7 +10,7 @@ import { TestProducer } from './test-producer';
  *
  * @example
  * ```ts
- * import { TestQueue } from 'amqp-oop/vitest';
+ * import { TestQueue } from 'amqpx/vitest';
  *
  * const queue = new TestQueue();
  * // or create from TestChannel, TestConnection, or TestExchange

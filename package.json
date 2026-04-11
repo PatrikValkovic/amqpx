@@ -1,6 +1,6 @@
 {
-  "name": "amqp-oop",
-  "version": "0.0.0",
+  "name": "amqpx",
+  "version": "1.0.0",
   "description": "WIP package",
   "main": "dist/index.js",
   "scripts": {
@@ -14,8 +14,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "amqp-oop"
+    "url": "amqpx"
   },
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": "./dist/index.js",
     "./jest": "./dist/extensions/jest/index.js",
@@ -33,7 +36,20 @@
     "amqplib": "^1.0.3"
   },
   "peerDependencies": {
-    "zod": "^4.0.0"
+    "zod": "x.x.x",
+    "vitest": "x.x.x",
+    "jest": "x.x.x"
+  },
+  "peerDependenciesMeta": {
+    "zod": {
+      "optional": true
+    },
+    "vitest": {
+      "optional": true
+    },
+    "jest": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@patrikvalkovic/eslint-config": "^1.0.9",

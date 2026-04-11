@@ -11,7 +11,7 @@ import { TestConsumer, TestExchange, TestProducer, TestQueue } from '.';
  *
  * @example
  * ```ts
- * import { TestConnection, TestChannel } from 'amqp-oop/vitest';
+ * import { TestConnection, TestChannel } from 'amqpx/vitest';
  *
  * const connection = new TestConnection();
  *

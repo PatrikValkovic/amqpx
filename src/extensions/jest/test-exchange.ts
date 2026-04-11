@@ -9,7 +9,7 @@ import { TestConsumer, TestProducer } from '.';
  *
  * @example
  * ```ts
- * import { TestExchange } from 'amqp-oop/jest';
+ * import { TestExchange } from 'amqpx/jest';
  *
  * const exchange = new TestExchange();
  * // or create from TestChannel or TestConnection

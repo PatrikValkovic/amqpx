@@ -16,7 +16,7 @@ import { TestChannel } from './test-channel';
  *
  * @example
  * ```ts
- * import { TestConsumer } from 'amqp-oop/vitest';
+ * import { TestConsumer } from 'amqpx/vitest';
  *
  * const consumer = new TestConsumer();
  *
