@@ -21,7 +21,7 @@ export class BatchConsumerImplementation<Message>
 
     private readonly options: Required<BatchConsumerOptions<Message>>;
     private batches: BatchRecord<Message>[] = [];
-    private batchFillingTimer: NodeJS.Timeout | undefined;
+    private batchFillTimer: NodeJS.Timeout | undefined;
 
     constructor(
         channel: Channel,
@@ -62,6 +62,7 @@ export class BatchConsumerImplementation<Message>
             return { amqpConsumer, callback };
         })();
 
+        await this.consumer;
         return this;
     }
 
@@ -81,44 +82,47 @@ export class BatchConsumerImplementation<Message>
         const { content } = msg;
         const parsed = await this.options.parseMessageFn(content);
 
+        // Create new batch if necessary
         if (this.batches.length === 0 || last(this.batches)?.state !== BatchState.WaitingForData) {
             this.batches.push({
                 messages: [],
                 state: BatchState.WaitingForData,
             });
         }
-        const lastNotProcessedBatch = last(this.batches);
-        if (!lastNotProcessedBatch)
+
+        // Add message to the last batch
+        const lastBatch = last(this.batches);
+        if (!lastBatch)
             throw this.processError('Internal error: Cannot get last batch, should never happen');
-        lastNotProcessedBatch.messages.push({
+        lastBatch.messages.push({
             message: parsed,
             rabbitMessage: msg,
         });
 
-        // we have enough messages
-        if (lastNotProcessedBatch.messages.length >= this.effectiveBatchSize) {
-            clearTimeout(this.batchFillingTimer);
-            this.batchFillingTimer = undefined;
+        // Last batch have enough messages, process it
+        if (lastBatch.messages.length >= this.effectiveBatchSize) {
+            clearTimeout(this.batchFillTimer);
+            this.batchFillTimer = undefined;
             await this.handleBatch(
                 callback,
                 originalChannel,
-                lastNotProcessedBatch,
+                lastBatch,
                 stillConnected,
             );
             return;
         }
 
-        // not enough messages
-        if (!this.batchFillingTimer) {
-            this.batchFillingTimer = setTimeout(async () => {
-                this.batchFillingTimer = undefined;
+        // Last batch has not enough messages, set max wait time before processing
+        if (!this.batchFillTimer) {
+            this.batchFillTimer = setTimeout(async () => {
+                this.batchFillTimer = undefined;
                 await this.handleBatch(
                     callback,
                     originalChannel,
-                    lastNotProcessedBatch,
+                    lastBatch,
                     stillConnected,
                 );
-            }, this.maxProcessingDelay);
+            }, this.maxWaitTimeForBatch);
         }
     }
 
@@ -134,12 +138,18 @@ export class BatchConsumerImplementation<Message>
         return this.options.failureStrategy === ConsumptionFailureStrategy.Drop;
     }
 
-    private get acknowledgeDelay() {
+    private get maxWaitTimeForAck() {
         return Math.max(this.options.maxWaitTimeForAck, 0);
     }
 
-    private get maxProcessingDelay() {
+    private get maxWaitTimeForBatch() {
         return Math.max(this.options.maxWaitTimeForBatch, 0);
+    }
+
+    private processError(message: string) {
+        const err =  new Error(message);
+        this.emit('error', err);
+        return err;
     }
 
     private async handleBatch(
@@ -331,12 +341,7 @@ export class BatchConsumerImplementation<Message>
                             channel.ack(rabbitMessage, false),
                         );
                     }
-                }, this.acknowledgeDelay);
+                }, this.maxWaitTimeForAck);
             });
-    }
-
-    private processError(message: string) {
-        this.emit('error', message);
-        return new Error(message);
     }
 }

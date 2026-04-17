@@ -604,7 +604,7 @@ describe('Batch consumer implementation', () => {
 
             await consumer.listen(listener);
 
-            let errorMsg: string | undefined;
+            let errorMsg: Error | undefined;
             consumer.on('error', error => {
                 errorMsg = error;
             });
@@ -612,7 +612,7 @@ describe('Batch consumer implementation', () => {
             const { consumePromise } = processGeneratedMessages(5);
 
             await expect(consumePromise).rejects.toThrow(`Not supported batch failure strategy: invalid`);
-            expect(errorMsg).toEqual('Not supported batch failure strategy: invalid');
+            expect(errorMsg?.message).toEqual('Not supported batch failure strategy: invalid');
         });
 
         test('should throw error when invalid failure strategy is used with reject batch failure', async () => {
@@ -631,7 +631,7 @@ describe('Batch consumer implementation', () => {
 
             await consumer.listen(listener);
 
-            let errorMsg: string | undefined;
+            let errorMsg: Error | undefined;
             consumer.on('error', error => {
                 errorMsg = error;
             });
@@ -639,7 +639,7 @@ describe('Batch consumer implementation', () => {
             const { consumePromise } = processGeneratedMessages(5);
 
             await expect(consumePromise).rejects.toThrow(`Not supported failure strategy: invalid`);
-            expect(errorMsg).toEqual('Not supported failure strategy: invalid');
+            expect(errorMsg?.message).toEqual('Not supported failure strategy: invalid');
         });
 
         test('should throw error when invalid failure strategy is used with split batch failure', async () => {
@@ -658,7 +658,7 @@ describe('Batch consumer implementation', () => {
 
             await consumer.listen(listener);
 
-            let errorMsg: string | undefined;
+            let errorMsg: Error | undefined;
             consumer.on('error', error => {
                 errorMsg = error;
             });
@@ -666,7 +666,7 @@ describe('Batch consumer implementation', () => {
             const { consumePromise } = processGeneratedMessages(5);
 
             await expect(consumePromise).rejects.toThrow('Not supported failure strategy: invalid');
-            expect(errorMsg).toEqual('Not supported failure strategy: invalid');
+            expect(errorMsg?.message).toEqual('Not supported failure strategy: invalid');
         });
     });
 

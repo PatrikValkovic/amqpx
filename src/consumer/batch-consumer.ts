@@ -11,7 +11,7 @@ export type BatchConsumerEventMap = BaseConsumerEventMap & {
     /**
      * Emitted when an internal processing error occurs.
      */
-    error: [message: string];
+    error: [error: Error];
     /**
      * Emitted when the message handler throws an error.
      * TODO: not yet emitted by the implementation

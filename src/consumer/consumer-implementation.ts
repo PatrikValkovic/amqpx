@@ -31,15 +31,6 @@ export class ConsumerImplementation<Message>
             ]);
 
             await channel.prefetch(this.options.prefetch);
-            const shouldAck =
-            // if prefetch is greater than zero, then in order to consumer not process more messages
-            // than specified, acknowledgement must be enabled, otherwise (if value is false) auto
-            // acknowledgement is enabled and broker automatically knowledge any sent message resulting
-            // in multiple messages on consumer than specified
-            this.options.prefetch > 0 ||
-            // acknowledgement must be also enabled on any non-drop failure strategy
-            this.options.failureStrategy !== ConsumptionFailureStrategy.Drop;
-            // effectively enabling auto-acknowledgement only if there is no limit and drop failure strategy
 
             // this must be object, so it is passed down as reference
             const channelStatus = {
@@ -49,6 +40,7 @@ export class ConsumerImplementation<Message>
                 channelStatus.isConnected = false;
             });
 
+            const shouldAck = this.shouldAcknowledge();
             this.currentlyProcessingMessages = 0;
             const amqpConsumer = await channel.consume(
                 queueName,
@@ -65,7 +57,7 @@ export class ConsumerImplementation<Message>
             };
         })();
 
-
+        await this.consumer;
         return this;
     }
 
@@ -117,5 +109,18 @@ export class ConsumerImplementation<Message>
             this.currentlyProcessingMessages--;
             this.notifyMessageProcessed?.();
         }
+    }
+
+    private shouldAcknowledge() {
+        return (
+            // if prefetch is greater than zero, then in order to consumer not process more messages
+            // than specified, acknowledgement must be enabled, otherwise (if value is false) auto
+            // acknowledgement is enabled and broker automatically knowledge any sent message resulting
+            // in multiple messages on consumer than specified
+            this.options.prefetch > 0 ||
+            // acknowledgement must be also enabled on any non-drop failure strategy
+            this.options.failureStrategy !== ConsumptionFailureStrategy.Drop
+        );
+        // effectively enabling auto-acknowledgement only if there is no limit and drop failure strategy
     }
 }
