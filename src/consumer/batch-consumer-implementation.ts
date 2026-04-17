@@ -13,6 +13,7 @@ import {
     DEFAULT_CONSUMER_OPTIONS,
 } from './types';
 import { BatchConsumer, BatchConsumerEventMap } from './batch-consumer';
+import { RECONNECT_TIMEOUT } from './consumer';
 
 export class BatchConsumerImplementation<Message> extends EventEmitter<BatchConsumerEventMap> implements BatchConsumer<Message> {
     private static readonly DEFAULT_BATCH_SIZE = 20;
@@ -22,7 +23,6 @@ export class BatchConsumerImplementation<Message> extends EventEmitter<BatchCons
     private callback: BatchConsumerCallbackFn<Message> | null = null;
     private currentlyProcessingMessages = 0;
     private notifyMessageProcessed: (() => void) | undefined = undefined;
-    private readonly channelCloseCallback: (() => void);
     private batches: BatchRecord<Message>[] = [];
     private batchFillingTimer: NodeJS.Timeout | undefined;
 
@@ -35,16 +35,21 @@ export class BatchConsumerImplementation<Message> extends EventEmitter<BatchCons
         this.options = deepMerge({}, DEFAULT_CONSUMER_OPTIONS, options) as typeof DEFAULT_CONSUMER_OPTIONS;
         if (this.effectiveBatchSize === 1 && this.options.batchFailureStrategy === BatchFailureStrategy.Split)
             throw new Error('Cannot have split batch failure strategy when batch size is 1');
-        // This magic will make sure the implementation tries to reconnect to the channel with
-        // some backoff when the connection is lost.
-        this.channelCloseCallback = () => {
-            setTimeout(() => {
-                if (this.callback)
-                    this.listen(this.callback).catch(() => { /* ignore */ });
-            }, 100);
-        };
         this._channel.on('close', this.channelCloseCallback);
     }
+
+    // Must be kept as attribute instead of method, so I don't need to deal with .bind
+    // This magic will make sure the implementation tries to reconnect to the channel with
+    // some backoff when the connection is lost.
+    private readonly channelCloseCallback = () => {
+        setTimeout(() => {
+            if (this.callback) {
+                this.listen(this.callback).catch(() => {
+                    void this.close();
+                });
+            }
+        }, RECONNECT_TIMEOUT);
+    };
 
     async close(timeout = 30000): Promise<void> {
         const channel = await this._channel.native();

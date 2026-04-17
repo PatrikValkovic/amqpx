@@ -3,6 +3,8 @@ import { Queue } from '../queue';
 import { Channel } from '../channel';
 import { ConsumerCallbackFn } from './types';
 
+export const RECONNECT_TIMEOUT = 100;
+
 /**
  * Events emitted by a {@link Consumer}.
  */

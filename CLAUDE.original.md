@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+File give guidance to Claude Code (claude.ai/code) for this repo.
 
 ## Commands
 
@@ -19,14 +19,14 @@ npx vitest run src/path/to/file.spec.ts
 
 ## Architecture
 
-OOP wrapper over `amqplib` for RabbitMQ. All core entities have an interface + implementation pair.
+OOP wrapper over `amqplib` for RabbitMQ. All core entities have interface + implementation pair.
 
 **Dependency hierarchy (top → bottom):**
 ```
 Connection → Channel → Exchange / Queue → Producer / Consumer
 ```
 
-Each layer exposes factory methods to create the layer below (e.g. `Channel.queue()` returns a `Queue`, `Queue.consumer()` returns a `Consumer`).
+Each layer expose factory methods to create layer below (e.g. `Channel.queue()` returns `Queue`, `Queue.consumer()` returns `Consumer`).
 
 ### Core layers (`src/`)
 
@@ -34,7 +34,7 @@ Each layer exposes factory methods to create the layer below (e.g. `Channel.queu
 |---|---|---|
 | Connection | `/connection` | Lifecycle state machine (preconnect→connected→closed), reconnection via `RetryStrategy` |
 | Channel | `/channel` | Wraps amqplib channel; creates exchanges, queues, producers, consumers |
-| Exchange | `/exchange` | assert, bind queues/exchanges; `predefined.ts` has the 5 default RabbitMQ exchanges |
+| Exchange | `/exchange` | assert, bind queues/exchanges; `predefined.ts` has 5 default RabbitMQ exchanges |
 | Queue | `/queue` | assert, bind to exchange, create consumer/producer |
 | Producer | `/producer` | Generic `<T>`, serialization, routing key fn, `beforeSend`/`afterSend` hooks, drain backpressure |
 | Consumer | `/consumer` | Generic `<Message>`, failure strategies (Drop/Requeue/Reject), prefetch, auto-reconnect |
@@ -42,8 +42,8 @@ Each layer exposes factory methods to create the layer below (e.g. `Channel.queu
 
 ### Extensions (`src/extensions/`)
 
-- **`/zod`** — `ZodValidatedConsumer`: decorator that validates incoming messages against a Zod schema before passing to the handler
-- **`/vitest`** and **`/jest`** — Mock implementations (`TestConnection`, `TestChannel`, `TestQueue`, `TestExchange`, `TestProducer`, `TestConsumer`) for use in unit tests
+- **`/zod`** — `ZodValidatedConsumer`: decorator validate incoming messages against Zod schema before handler
+- **`/vitest`** and **`/jest`** — Mock implementations (`TestConnection`, `TestChannel`, `TestQueue`, `TestExchange`, `TestProducer`, `TestConsumer`) for unit tests
 
 ### Package exports
 
@@ -56,8 +56,8 @@ Each layer exposes factory methods to create the layer below (e.g. `Channel.queu
 
 ## Key conventions
 
-- All core interfaces are exported from their directory's `index.ts`; implementations are not exported directly.
-- `assert()` methods on Exchange/Queue are lazy — they perform the actual amqplib assertion and should be awaited before use.
-- Message serialization defaults to JSON; override via `serialize`/`parse` options on Producer/Consumer.
-- `ConsumptionFailedStrategy` on Consumer controls what happens on handler errors: Drop (ack), Requeue, or Reject (nack).
+- All core interfaces exported from directory `index.ts`; implementations not exported directly.
+- `assert()` on Exchange/Queue lazy — perform actual amqplib assertion, must await before use.
+- Message serialization default JSON; override via `serialize`/`parse` options on Producer/Consumer.
+- `ConsumptionFailedStrategy` on Consumer control handler errors: Drop (ack), Requeue, or Reject (nack).
 - Retry strategies use `externallyResolvedPromise` + `sleepPromise` utilities from `src/utils.ts`.

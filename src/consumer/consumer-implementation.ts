@@ -3,7 +3,7 @@ import * as amqp from 'amqplib';
 import { Queue } from '../queue';
 import { Channel } from '../channel';
 import { deepMerge, sleepPromise } from '../utils';
-import { Consumer, ConsumerEventMap } from './consumer';
+import { Consumer, ConsumerEventMap, RECONNECT_TIMEOUT } from './consumer';
 import { ConsumerCallbackFn, ConsumerOptions, ConsumptionFailureStrategy, ConsumerWrapper, DEFAULT_CONSUMER_OPTIONS } from './types';
 
 export class ConsumerImplementation<Message> extends EventEmitter<ConsumerEventMap> implements Consumer<Message> {
@@ -20,15 +20,20 @@ export class ConsumerImplementation<Message> extends EventEmitter<ConsumerEventM
         super();
         this.options = deepMerge({}, DEFAULT_CONSUMER_OPTIONS, options) as typeof DEFAULT_CONSUMER_OPTIONS;
         // This make sure the implementation tries to reconnect to the channel
-        this.channel.on('close', this.channelCloseCallback.bind(this));
+        this.channel.on('close', this.channelCloseCallback);
     }
 
+    // Must be kept as attribute instead of method, so I don't need to deal with .bind
+    // This magic will make sure the implementation tries to reconnect to the channel with
+    // some backoff when the connection is lost.
     private readonly channelCloseCallback = () => {
-        if (this.consumer) {
-            this.listen(this.consumer.callback).catch(() => {
-                void this.close();
-            });
-        }
+        setTimeout(() => {
+            if (this.consumer) {
+                this.listen(this.consumer.callback).catch(() => {
+                    void this.close();
+                });
+            }
+        }, RECONNECT_TIMEOUT);
     };
 
     async close(timeout = 30000): Promise<void> {
