@@ -1,84 +1,35 @@
-import { EventEmitter } from 'node:events';
 import * as amqp from 'amqplib';
 import { Queue } from '../queue';
 import { Channel } from '../channel';
-import { deepMerge, head, last, sum, sleepPromise } from '../utils';
+import { deepMerge, head, last, sum } from '../utils';
 import {
     BatchConsumerCallbackFn,
     BatchConsumerOptions,
     BatchFailureStrategy,
     BatchRecord,
     BatchState,
-    ConsumerWrapper,
     ConsumptionFailureStrategy,
     DEFAULT_CONSUMER_OPTIONS,
 } from './types';
 import { BatchConsumer, BatchConsumerEventMap } from './batch-consumer';
-import { RECONNECT_TIMEOUT } from './consumer';
+import { BaseConsumer } from './base-consumer';
 
-export class BatchConsumerImplementation<Message> extends EventEmitter<BatchConsumerEventMap> implements BatchConsumer<Message> {
+export class BatchConsumerImplementation<Message> extends BaseConsumer<BatchConsumerCallbackFn<Message>, BatchConsumerEventMap> implements BatchConsumer<Message> {
     private static readonly DEFAULT_BATCH_SIZE = 20;
 
     private readonly options: Required<BatchConsumerOptions<Message>>;
-    private consumer: ConsumerWrapper<BatchConsumerCallbackFn<Message>> | null = null;
-    private currentlyProcessingMessages = 0;
-    private notifyMessageProcessed: (() => void) | undefined = undefined;
     private batches: BatchRecord<Message>[] = [];
     private batchFillingTimer: NodeJS.Timeout | undefined;
 
     constructor(
-        private readonly _channel: Channel,
-        private readonly _queue: Queue,
+        channel: Channel,
+        queue: Queue,
         options: BatchConsumerOptions<Message> = {},
     ) {
-        super();
+        super(channel, queue);
         this.options = deepMerge({}, DEFAULT_CONSUMER_OPTIONS, options) as typeof DEFAULT_CONSUMER_OPTIONS;
         if (this.effectiveBatchSize === 1 && this.options.batchFailureStrategy === BatchFailureStrategy.Split)
             throw new Error('Cannot have split batch failure strategy when batch size is 1');
-        this._channel.on('close', this.channelCloseCallback);
-    }
-
-    // Must be kept as attribute instead of method, so I don't need to deal with .bind
-    // This magic will make sure the implementation tries to reconnect to the channel with
-    // some backoff when the connection is lost.
-    private readonly channelCloseCallback = () => {
-        setTimeout(() => {
-            if (this.consumer) {
-                const { callback } = this.consumer;
-                this.consumer = null;
-                this.listen(callback).catch(() => {
-                    void this.close();
-                });
-            }
-        }, RECONNECT_TIMEOUT);
-    };
-
-    async close(timeout = 30000): Promise<void> {
-        if (this.consumer) {
-            const channel = await this._channel.native();
-
-            const { consumer } = this;
-            await channel.cancel(consumer.amqpConsumer.consumerTag);
-
-            const waitForAllMessagesPromise = new Promise<void>(resolve => {
-                this.notifyMessageProcessed = () => {
-                    if (this.currentlyProcessingMessages === 0)
-                        resolve();
-                };
-                this.notifyMessageProcessed();
-            });
-
-            try {
-                await Promise.race([
-                    waitForAllMessagesPromise,
-                    sleepPromise(timeout).then(() => {
-                        throw new Error('Consumer close timeout');
-                    }),
-                ]);
-            } finally {
-                this.consumer = null;
-            }
-        }
     }
 
     async listen(callback: BatchConsumerCallbackFn<Message>) {
@@ -86,8 +37,8 @@ export class BatchConsumerImplementation<Message> extends EventEmitter<BatchCons
             throw new Error('Listener is already attached');
 
         const [channel, queueName] = await Promise.all([
-            this._channel.native(),
-            this._queue.name(),
+            this.channel.native(),
+            this.queue.name(),
         ]);
         await channel.prefetch(this.options.prefetch);
         const amqpConsumer = await channel.consume(
@@ -100,14 +51,6 @@ export class BatchConsumerImplementation<Message> extends EventEmitter<BatchCons
         );
         this.consumer = { amqpConsumer, callback };
         return this;
-    }
-
-    get queue(): Queue {
-        return this._queue;
-    }
-
-    get channel(): Channel {
-        return this._channel;
     }
 
     private get effectiveBatchSize() {
@@ -137,7 +80,7 @@ export class BatchConsumerImplementation<Message> extends EventEmitter<BatchCons
     ) {
         // empty message means consumer is cancelled
         if (!msg) {
-            await this._channel.close();
+            await this.channel.close();
             return;
         }
 
@@ -146,7 +89,7 @@ export class BatchConsumerImplementation<Message> extends EventEmitter<BatchCons
         const handler = () => {
             stillConnected.value = false;
         };
-        this._channel.once('close', handler);
+        this.channel.once('close', handler);
 
         try {
             this.currentlyProcessingMessages++;
@@ -193,7 +136,7 @@ export class BatchConsumerImplementation<Message> extends EventEmitter<BatchCons
                 }, this.maxProcessingDelay);
             }
         } finally {
-            this._channel.off('close', handler);
+            this.channel.off('close', handler);
         }
     }
 
@@ -207,7 +150,7 @@ export class BatchConsumerImplementation<Message> extends EventEmitter<BatchCons
             batch.state = BatchState.Processing;
             await callback({
                 messages: batch.messages,
-                channel: this._channel,
+                channel: this.channel,
             });
             if (!stillConnected.value) {
                 this.removeProcessedBatches(batch);

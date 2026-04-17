@@ -43,7 +43,7 @@ export class TestConsumer<T> extends EventEmitter implements Consumer<T> {
 
     setPrefetch = jest.fn().mockImplementation(() => Promise.resolve());
 
-    getQueue = jest.fn().mockImplementation(() => new TestQueue());
+    queue = new TestQueue();
 
-    getChannel = jest.fn().mockImplementation(() => new TestChannel());
+    channel = new TestChannel();
 }

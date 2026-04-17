@@ -43,7 +43,7 @@ export class TestConsumer<T> extends EventEmitter implements Consumer<T> {
 
     setPrefetch = vitest.fn().mockImplementation(() => Promise.resolve());
 
-    getQueue = vitest.fn().mockImplementation(() => new TestQueue());
+    queue = new TestQueue();
 
-    getChannel = vitest.fn().mockImplementation(() => new TestChannel());
+    channel = new TestChannel();
 }

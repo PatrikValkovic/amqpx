@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { type z } from 'zod';
-import { Queue, Channel, ConsumerCallbackFn, Consumer } from '../../index';
+import { ConsumerCallbackFn, Consumer } from '../../index';
 import { ConsumerEventMap } from '../../consumer/consumer';
 import { ZodValidationError } from './zod-validation-error';
 
@@ -73,17 +73,11 @@ export class ZodValidatedConsumer<InputMessage, AdditionalProperties, OutputMess
         return this;
     }
 
-    /**
-     * @inheritDoc
-     */
-    getQueue(): Queue {
-        return this.consumer.getQueue();
+    get queue() {
+        return this.consumer.queue;
     }
 
-    /**
-     * @inheritDoc
-     */
-    getChannel(): Channel {
-        return this.consumer.getChannel();
+    get channel() {
+        return this.consumer.channel;
     }
 }

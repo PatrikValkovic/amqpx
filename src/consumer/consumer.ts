@@ -8,12 +8,12 @@ export const RECONNECT_TIMEOUT = 100;
 /**
  * Events emitted by a {@link Consumer}.
  */
-export interface ConsumerEventMap {
+export type ConsumerEventMap = {
     /**
      * Emitted when the message handler throws an error.
      */
     handlingFailed: [error: unknown];
-}
+};
 
 /**
  * Represents service consuming messages from RabbitMQ.
@@ -25,7 +25,7 @@ export interface Consumer<Message, AdditionalProperties = Record<string, unknown
 
     listen(callback: ConsumerCallbackFn<Message, AdditionalProperties>): Promise<Consumer<Message, AdditionalProperties>>;
 
-    getQueue(): Queue;
+    get queue(): Queue;
 
-    getChannel(): Channel;
+    get channel(): Channel;
 }

@@ -1,11 +1,11 @@
 import { Connection } from '../connection';
-import { Consumer } from '../consumer';
+import { BatchConsumer, Consumer } from '../consumer';
 import { Producer } from '../producer';
 
 export class RabbitCloser {
     constructor(
         private readonly connections: Connection[],
-        private readonly consumers: Consumer<unknown>[],
+        private readonly consumers: Array<Consumer<unknown> | BatchConsumer<unknown>>,
         private readonly producers: Producer<unknown>[],
     ) {
     }
@@ -20,7 +20,7 @@ export class RabbitCloser {
         await Promise.all(
             this.consumers.map(async consumer => {
                 await consumer.close();
-                await consumer.getChannel().close();
+                await consumer.channel.close();
             }),
         );
         await Promise.all(

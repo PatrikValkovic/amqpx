@@ -113,20 +113,20 @@ Exchange bindings are stored on the instance (`this.bindings`). If an Exchange i
 
 ### Tier 2 — Observability (Required for Production Operations)
 
-| Feature | Why Needed |
-|---------|-----------|
-| **Logger interface injection** | No way to centralize library log output; errors surface only via EventEmitter. |
-| **Metrics hooks (Prometheus/StatsD compatible)** | No counters for publishes, consumes, retries, failures, or latency. |
-| **OpenTelemetry distributed tracing extension** | No trace context propagation across message boundaries. |
-| **Health check / readiness probe abstraction** | Kubernetes/orchestration systems need liveness/readiness signals. |
+| Feature                                          | Why Needed                                                                     |
+|--------------------------------------------------|--------------------------------------------------------------------------------|
+| **Logger interface injection**                   | No way to centralize library log output; errors surface only via EventEmitter. |
+| **Metrics hooks (Prometheus/StatsD compatible)** | No counters for publishes, consumes, retries, failures, or latency.            |
+| **OpenTelemetry distributed tracing extension**  | No trace context propagation across message boundaries.                        |
+| **Health check / readiness probe abstraction**   | Kubernetes/orchestration systems need liveness/readiness signals.              |
 
 ### Tier 3 — Messaging Patterns
 
-| Feature | Why Needed |
-|---------|-----------|
-| **RPC / request-reply pattern** | Very common; requires manual `reply_to`/`correlationId` wiring today. |
+| Feature                          | Why Needed                                                                                     |
+|----------------------------------|------------------------------------------------------------------------------------------------|
+| **RPC / request-reply pattern**  | Very common; requires manual `reply_to`/`correlationId` wiring today.                          |
 | **Consumer middleware pipeline** | No preprocessing chain (decompression, decryption, validation) without modifying handler code. |
-| **Producer middleware pipeline** | `beforeSend`/`afterSend` hooks exist but are not composable as a chain. |
+| **Producer middleware pipeline** | `beforeSend`/`afterSend` hooks exist but are not composable as a chain.                        |
 
 ### Tier 5 — Testing Improvements
 

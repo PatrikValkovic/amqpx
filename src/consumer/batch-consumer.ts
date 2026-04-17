@@ -6,7 +6,7 @@ import { BatchConsumerCallbackFn } from './types';
 /**
  * Events emitted by a {@link BatchConsumer}.
  */
-export interface BatchConsumerEventMap {
+export type BatchConsumerEventMap = {
     /**
      * Emitted when an internal processing error occurs.
      */
@@ -16,7 +16,7 @@ export interface BatchConsumerEventMap {
      * TODO: not yet emitted by the implementation
      */
     handlingFailed: [error: unknown];
-}
+};
 
 export interface BatchConsumer<Message, AdditionalProperties = Record<string, unknown>> extends EventEmitter<BatchConsumerEventMap> {
     close(timeout?: number): Promise<void>;

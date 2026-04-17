@@ -1,69 +1,21 @@
-import { EventEmitter } from 'events';
 import * as amqp from 'amqplib';
 import { Queue } from '../queue';
 import { Channel } from '../channel';
-import { deepMerge, sleepPromise } from '../utils';
-import { Consumer, ConsumerEventMap, RECONNECT_TIMEOUT } from './consumer';
-import { ConsumerCallbackFn, ConsumerOptions, ConsumptionFailureStrategy, ConsumerWrapper, DEFAULT_CONSUMER_OPTIONS } from './types';
+import { deepMerge } from '../utils';
+import { Consumer, ConsumerEventMap } from './consumer';
+import { ConsumerCallbackFn, ConsumerOptions, ConsumptionFailureStrategy, DEFAULT_CONSUMER_OPTIONS } from './types';
+import { BaseConsumer } from './base-consumer';
 
-export class ConsumerImplementation<Message> extends EventEmitter<ConsumerEventMap> implements Consumer<Message> {
+export class ConsumerImplementation<Message> extends BaseConsumer<ConsumerCallbackFn<Message>, ConsumerEventMap> implements Consumer<Message> {
     private readonly options: Required<ConsumerOptions<Message>>;
-    private consumer: ConsumerWrapper<ConsumerCallbackFn<Message>> | null = null;
-    private currentlyProcessingMessages = 0;
-    private notifyMessageProcessed: (() => void) | undefined = undefined;
 
     constructor(
-        private readonly channel: Channel,
-        private readonly queue: Queue,
+        channel: Channel,
+        queue: Queue,
         options: ConsumerOptions<Message>,
     ) {
-        super();
+        super(channel, queue);
         this.options = deepMerge({}, DEFAULT_CONSUMER_OPTIONS, options) as typeof DEFAULT_CONSUMER_OPTIONS;
-        // This make sure the implementation tries to reconnect to the channel
-        this.channel.on('close', this.channelCloseCallback);
-    }
-
-    // Must be kept as attribute instead of method, so I don't need to deal with .bind
-    // This magic will make sure the implementation tries to reconnect to the channel with
-    // some backoff when the connection is lost.
-    private readonly channelCloseCallback = () => {
-        setTimeout(() => {
-            if (this.consumer) {
-                const { callback } = this.consumer;
-                this.consumer = null;
-                this.listen(callback).catch(() => {
-                    void this.close();
-                });
-            }
-        }, RECONNECT_TIMEOUT);
-    };
-
-    async close(timeout = 30000): Promise<void> {
-        if (this.consumer) {
-            const channel = await this.channel.native();
-
-            const { consumer } = this;
-            await channel.cancel(consumer.amqpConsumer.consumerTag);
-
-            const waitForAllMessagesPromise = new Promise<void>((resolve => {
-                this.notifyMessageProcessed = () => {
-                    if (this.currentlyProcessingMessages === 0)
-                        resolve();
-                };
-                this.notifyMessageProcessed();
-            }));
-
-            try {
-                await Promise.race([
-                    waitForAllMessagesPromise,
-                    sleepPromise(timeout).then(() => {
-                        throw new Error('Consumer close timeout');
-                    }),
-                ]);
-            } finally {
-                this.consumer = null;
-            }
-        }
     }
 
     async listen(callback: ConsumerCallbackFn<Message>) {
@@ -109,14 +61,6 @@ export class ConsumerImplementation<Message> extends EventEmitter<ConsumerEventM
         };
 
         return this;
-    }
-
-    getQueue(): Queue {
-        return this.queue;
-    }
-
-    getChannel(): Channel {
-        return this.channel;
     }
 
     private async messageReceiver(
