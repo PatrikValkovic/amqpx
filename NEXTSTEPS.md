@@ -20,9 +20,6 @@ Ordered roughly by severity.
 
 ### High — Race Conditions / State Corruption
 
-**B10. Auto-reconnect is completely broken; no `isClosed` guard**
-`src/consumer/consumer-implementation.ts:26–32` — `channelCloseCallback` calls `this.listen(this.consumer.callback)` without clearing `this.consumer` first. But `listen()` immediately throws `'Listener is already attached'` when `this.consumer !== null`. Because the channel-close event always fires while `this.consumer` is still set, every reconnect attempt throws, the catch calls `void this.close()` (a no-op on an already-closed channel), and the consumer silently dies. Additionally, there is no `isClosed` flag, so `channelCloseCallback` still fires after an explicit `close()` call (the listener leaks per B5), attempting futile reconnects indefinitely.
-
 **B19. Concurrent `close()` calls corrupt `notifyMessageProcessed`**
 `src/consumer/consumer-implementation.ts:34–58` — If the channel closes while `close()` is in progress (between `channel.cancel()` and `this.consumer = null`), `channelCloseCallback` fires, sees `this.consumer !== null`, calls `listen()` which throws, and the catch calls `void this.close()` again. The second concurrent `close()` call overwrites `this.notifyMessageProcessed` (line 40–45), so the first `Promise.race` loses its resolve trigger and hangs until the 30-second timeout. Both calls then race to set `this.consumer = null`.
 

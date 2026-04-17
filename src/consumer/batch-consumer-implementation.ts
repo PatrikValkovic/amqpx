@@ -14,7 +14,9 @@ import {
 import { BatchConsumer, BatchConsumerEventMap } from './batch-consumer';
 import { BaseConsumer } from './base-consumer';
 
-export class BatchConsumerImplementation<Message> extends BaseConsumer<BatchConsumerCallbackFn<Message>, BatchConsumerEventMap> implements BatchConsumer<Message> {
+export class BatchConsumerImplementation<Message>
+    extends BaseConsumer<BatchConsumerCallbackFn<Message>, BatchConsumerEventMap>
+    implements BatchConsumer<Message> {
     private static readonly DEFAULT_BATCH_SIZE = 20;
 
     private readonly options: Required<BatchConsumerOptions<Message>>;

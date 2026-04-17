@@ -6,7 +6,9 @@ import { Consumer, ConsumerEventMap } from './consumer';
 import { ConsumerCallbackFn, ConsumerOptions, ConsumptionFailureStrategy, DEFAULT_CONSUMER_OPTIONS } from './types';
 import { BaseConsumer } from './base-consumer';
 
-export class ConsumerImplementation<Message> extends BaseConsumer<ConsumerCallbackFn<Message>, ConsumerEventMap> implements Consumer<Message> {
+export class ConsumerImplementation<Message>
+    extends BaseConsumer<ConsumerCallbackFn<Message>, ConsumerEventMap>
+    implements Consumer<Message> {
     private readonly options: Required<ConsumerOptions<Message>>;
 
     constructor(

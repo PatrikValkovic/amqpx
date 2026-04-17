@@ -5,9 +5,24 @@ import { sleepPromise } from '../utils';
 import { RECONNECT_TIMEOUT } from './consumer';
 import { ConsumerWrapper } from './types';
 
+/**
+ * Events emitted by a {@link BaseConsumer}.
+ */
+export type BaseConsumerEventMap = {
+    /**
+     * Emitted when an error occurs during reconnection to RabbitMQ.
+     */
+    reconnectError: [error: unknown];
+    /**
+     * Emitted when the consumer is closed and all in-flight messages have been processed.
+     */
+    close: [];
+    [event: string]: unknown[];
+};
+
 export abstract class BaseConsumer<
     CallbackFn,
-    EventMap extends Record<string | symbol, unknown[]>,
+    EventMap extends BaseConsumerEventMap,
 > extends EventEmitter<EventMap> {
     protected consumer: ConsumerWrapper<CallbackFn> | null = null;
     protected currentlyProcessingMessages = 0;
@@ -26,7 +41,8 @@ export abstract class BaseConsumer<
             if (this.consumer) {
                 const { callback } = this.consumer;
                 this.consumer = null;
-                this.listen(callback).catch(() => {
+                this.listen(callback).catch(err => {
+                    (this as EventEmitter<BaseConsumerEventMap>).emit('reconnectError', err);
                     void this.close();
                 });
             }
@@ -58,6 +74,7 @@ export abstract class BaseConsumer<
                     }),
                 ]);
             } finally {
+                (this as EventEmitter<BaseConsumerEventMap>).emit('close');
                 this.consumer = null;
             }
         }

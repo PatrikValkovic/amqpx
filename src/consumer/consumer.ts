@@ -2,13 +2,14 @@ import { EventEmitter } from 'events';
 import { Queue } from '../queue';
 import { Channel } from '../channel';
 import { ConsumerCallbackFn } from './types';
+import { BaseConsumerEventMap } from './base-consumer';
 
 export const RECONNECT_TIMEOUT = 100;
 
 /**
  * Events emitted by a {@link Consumer}.
  */
-export type ConsumerEventMap = {
+export type ConsumerEventMap = BaseConsumerEventMap & {
     /**
      * Emitted when the message handler throws an error.
      */
