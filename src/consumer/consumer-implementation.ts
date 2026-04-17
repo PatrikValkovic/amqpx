@@ -24,13 +24,14 @@ export class ConsumerImplementation<Message>
         if (this.consumer)
             throw new Error('Listener is already attached');
 
-        const [channel, queueName] = await Promise.all([
-            this.channel.native(),
-            this.queue.name(),
-        ]);
+        this.consumer = (async () => {
+            const [channel, queueName] = await Promise.all([
+                this.channel.native(),
+                this.queue.name(),
+            ]);
 
-        await channel.prefetch(this.options.prefetch);
-        const shouldAck =
+            await channel.prefetch(this.options.prefetch);
+            const shouldAck =
             // if prefetch is greater than zero, then in order to consumer not process more messages
             // than specified, acknowledgement must be enabled, otherwise (if value is false) auto
             // acknowledgement is enabled and broker automatically knowledge any sent message resulting
@@ -38,29 +39,32 @@ export class ConsumerImplementation<Message>
             this.options.prefetch > 0 ||
             // acknowledgement must be also enabled on any non-drop failure strategy
             this.options.failureStrategy !== ConsumptionFailureStrategy.Drop;
-        // effectively enabling auto-acknowledgement only if there is no limit and drop failure strategy
+            // effectively enabling auto-acknowledgement only if there is no limit and drop failure strategy
 
-        const channelStatus = {
-            isConnected: true,
-        };
-        this.channel.once('close', () => {
-            channelStatus.isConnected = false;
-        });
+            // this must be object, so it is passed down as reference
+            const channelStatus = {
+                isConnected: true,
+            };
+            this.channel.once('close', () => {
+                channelStatus.isConnected = false;
+            });
 
-        this.currentlyProcessingMessages = 0;
-        const amqpConsumer = await channel.consume(
-            queueName,
-            this.messageReceiver.bind(this, callback, shouldAck, channel, channelStatus),
-            {
-                ...this.options.consumeOptions,
-                noAck: !shouldAck,
-            },
-        );
+            this.currentlyProcessingMessages = 0;
+            const amqpConsumer = await channel.consume(
+                queueName,
+                this.messageReceiver.bind(this, callback, shouldAck, channel, channelStatus),
+                {
+                    ...this.options.consumeOptions,
+                    noAck: !shouldAck,
+                },
+            );
 
-        this.consumer = {
-            amqpConsumer,
-            callback,
-        };
+            return {
+                amqpConsumer,
+                callback,
+            };
+        })();
+
 
         return this;
     }

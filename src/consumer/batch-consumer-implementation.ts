@@ -38,21 +38,88 @@ export class BatchConsumerImplementation<Message>
         if (this.consumer)
             throw new Error('Listener is already attached');
 
-        const [channel, queueName] = await Promise.all([
-            this.channel.native(),
-            this.queue.name(),
-        ]);
-        await channel.prefetch(this.options.prefetch);
-        const amqpConsumer = await channel.consume(
-            queueName,
-            this.messageReceiver.bind(this, callback, channel),
-            {
-                ...this.options.consumeOptions,
-                noAck: this.shouldAutoAck,
-            },
-        );
-        this.consumer = { amqpConsumer, callback };
+        this.consumer = (async () => {
+            const [channel, queueName] = await Promise.all([
+                this.channel.native(),
+                this.queue.name(),
+            ]);
+
+            await channel.prefetch(this.options.prefetch);
+            // this must be object, so it is passed down as reference
+            const stillConnected = { value: true };
+            this.channel.once('close', () => {
+                stillConnected.value = false;
+            });
+
+            const amqpConsumer = await channel.consume(
+                queueName,
+                this.messageReceiver.bind(this, callback, channel, stillConnected),
+                {
+                    ...this.options.consumeOptions,
+                    noAck: this.shouldAutoAck,
+                },
+            );
+            return { amqpConsumer, callback };
+        })();
+
         return this;
+    }
+
+    private async messageReceiver(
+        callback: BatchConsumerCallbackFn<Message>,
+        originalChannel: amqp.Channel,
+        stillConnected: { value: boolean },
+        msg: amqp.ConsumeMessage | null,
+    ) {
+        // empty message means consumer is canceled
+        if (!msg) {
+            await this.channel.close();
+            return;
+        }
+
+        this.currentlyProcessingMessages++;
+        const { content } = msg;
+        const parsed = await this.options.parseMessageFn(content);
+
+        if (this.batches.length === 0 || last(this.batches)?.state !== BatchState.WaitingForData) {
+            this.batches.push({
+                messages: [],
+                state: BatchState.WaitingForData,
+            });
+        }
+        const lastNotProcessedBatch = last(this.batches);
+        if (!lastNotProcessedBatch)
+            throw this.processError('Internal error: Cannot get last batch, should never happen');
+        lastNotProcessedBatch.messages.push({
+            message: parsed,
+            rabbitMessage: msg,
+        });
+
+        // we have enough messages
+        if (lastNotProcessedBatch.messages.length >= this.effectiveBatchSize) {
+            clearTimeout(this.batchFillingTimer);
+            this.batchFillingTimer = undefined;
+            await this.handleBatch(
+                callback,
+                originalChannel,
+                lastNotProcessedBatch,
+                stillConnected,
+            );
+            return;
+        }
+
+        // not enough messages
+        if (!this.batchFillingTimer) {
+            this.batchFillingTimer = setTimeout(async () => {
+                this.batchFillingTimer = undefined;
+                await this.handleBatch(
+                    callback,
+                    originalChannel,
+                    lastNotProcessedBatch,
+                    stillConnected,
+                );
+            }, this.maxProcessingDelay);
+        }
     }
 
     private get effectiveBatchSize() {
@@ -73,73 +140,6 @@ export class BatchConsumerImplementation<Message>
 
     private get maxProcessingDelay() {
         return Math.max(this.options.maxWaitTimeForBatch, 0);
-    }
-
-    private async messageReceiver(
-        callback: BatchConsumerCallbackFn<Message>,
-        originalChannel: amqp.Channel,
-        msg: amqp.ConsumeMessage | null,
-    ) {
-        // empty message means consumer is cancelled
-        if (!msg) {
-            await this.channel.close();
-            return;
-        }
-
-        // it must be an object, so it is passed into other methods as a reference
-        const stillConnected = { value: true };
-        const handler = () => {
-            stillConnected.value = false;
-        };
-        this.channel.once('close', handler);
-
-        try {
-            this.currentlyProcessingMessages++;
-            const { content } = msg;
-            const parsed = await this.options.parseMessageFn(content);
-
-            if (this.batches.length === 0 || last(this.batches)?.state !== BatchState.WaitingForData) {
-                this.batches.push({
-                    messages: [],
-                    state: BatchState.WaitingForData,
-                });
-            }
-            const lastNotProcessedBatch = last(this.batches);
-            if (!lastNotProcessedBatch)
-                throw this.processError('Internal error: Cannot get last batch, should never happen');
-            lastNotProcessedBatch.messages.push({
-                message: parsed,
-                rabbitMessage: msg,
-            });
-
-            // we have enough messages
-            if (lastNotProcessedBatch.messages.length >= this.effectiveBatchSize) {
-                clearTimeout(this.batchFillingTimer);
-                this.batchFillingTimer = undefined;
-                await this.handleBatch(
-                    callback,
-                    originalChannel,
-                    lastNotProcessedBatch,
-                    stillConnected,
-                );
-                return;
-            }
-
-            // not enough messages
-            if (!this.batchFillingTimer) {
-                this.batchFillingTimer = setTimeout(async () => {
-                    this.batchFillingTimer = undefined;
-                    await this.handleBatch(
-                        callback,
-                        originalChannel,
-                        lastNotProcessedBatch,
-                        stillConnected,
-                    );
-                }, this.maxProcessingDelay);
-            }
-        } finally {
-            this.channel.off('close', handler);
-        }
     }
 
     private async handleBatch(

@@ -24,7 +24,7 @@ export abstract class BaseConsumer<
     CallbackFn,
     EventMap extends BaseConsumerEventMap,
 > extends EventEmitter<EventMap> {
-    protected consumer: ConsumerWrapper<CallbackFn> | null = null;
+    protected consumer: Promise<ConsumerWrapper<CallbackFn>> | null = null;
     protected currentlyProcessingMessages = 0;
     protected notifyMessageProcessed: (() => void) | undefined = undefined;
 
@@ -37,9 +37,9 @@ export abstract class BaseConsumer<
     }
 
     private readonly channelCloseCallback = () => {
-        setTimeout(() => {
+        setTimeout(async () => {
             if (this.consumer) {
-                const { callback } = this.consumer;
+                const { callback } = await this.consumer;
                 this.consumer = null;
                 this.listen(callback).catch(err => {
                     (this as EventEmitter<BaseConsumerEventMap>).emit('reconnectError', err);
@@ -53,9 +53,9 @@ export abstract class BaseConsumer<
 
     async close(timeout = 30000): Promise<void> {
         if (this.consumer) {
+            const consumer = await this.consumer;
             const channel = await this.channel.native();
 
-            const { consumer } = this;
             await channel.cancel(consumer.amqpConsumer.consumerTag);
 
             const waitForAllMessagesPromise = new Promise<void>(resolve => {
