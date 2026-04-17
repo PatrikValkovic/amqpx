@@ -8,7 +8,7 @@ import { ConsumerCallbackFn, ConsumerOptions, ConsumptionFailureStrategy, Consum
 
 export class ConsumerImplementation<Message> extends EventEmitter<ConsumerEventMap> implements Consumer<Message> {
     private readonly options: Required<ConsumerOptions<Message>>;
-    private consumer: ConsumerWrapper<Message> | null = null;
+    private consumer: ConsumerWrapper<ConsumerCallbackFn<Message>> | null = null;
     private currentlyProcessingMessages = 0;
     private notifyMessageProcessed: (() => void) | undefined = undefined;
 
@@ -29,7 +29,9 @@ export class ConsumerImplementation<Message> extends EventEmitter<ConsumerEventM
     private readonly channelCloseCallback = () => {
         setTimeout(() => {
             if (this.consumer) {
-                this.listen(this.consumer.callback).catch(() => {
+                const { callback } = this.consumer;
+                this.consumer = null;
+                this.listen(callback).catch(() => {
                     void this.close();
                 });
             }
@@ -39,26 +41,28 @@ export class ConsumerImplementation<Message> extends EventEmitter<ConsumerEventM
     async close(timeout = 30000): Promise<void> {
         if (this.consumer) {
             const channel = await this.channel.native();
-            await channel.cancel(this.consumer.amqpConsumer.consumerTag);
+
+            const { consumer } = this;
+            await channel.cancel(consumer.amqpConsumer.consumerTag);
 
             const waitForAllMessagesPromise = new Promise<void>((resolve => {
                 this.notifyMessageProcessed = () => {
-                    if (this.currentlyProcessingMessages === 0) {
-                        this.channel.off('close', this.channelCloseCallback);
+                    if (this.currentlyProcessingMessages === 0)
                         resolve();
-                    }
                 };
                 this.notifyMessageProcessed();
             }));
 
-            await Promise.race([
-                waitForAllMessagesPromise.then(() => {
-                    this.consumer = null;
-                }),
-                sleepPromise(timeout).then(() => {
-                    throw new Error('Consumer close timeout');
-                }),
-            ]);
+            try {
+                await Promise.race([
+                    waitForAllMessagesPromise,
+                    sleepPromise(timeout).then(() => {
+                        throw new Error('Consumer close timeout');
+                    }),
+                ]);
+            } finally {
+                this.consumer = null;
+            }
         }
     }
 

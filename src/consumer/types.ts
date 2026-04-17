@@ -182,7 +182,7 @@ export type BatchRecord<Message> = {
     confirmTimer?: NodeJS.Timeout;
 };
 
-export type ConsumerWrapper<Message> = {
-    callback: ConsumerCallbackFn<Message>;
+export type ConsumerWrapper<Callback> = {
+    callback: Callback;
     amqpConsumer: amqp.Replies.Consume;
 };

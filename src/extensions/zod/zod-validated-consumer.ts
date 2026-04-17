@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { type z } from 'zod';
-import { Queue, Channel, ConsumerCallbackFn, Consumer, ConsumerEventMap } from '../../index';
+import { Queue, Channel, ConsumerCallbackFn, Consumer } from '../../index';
+import { ConsumerEventMap } from '../../consumer/consumer';
 import { ZodValidationError } from './zod-validation-error';
 
 /**

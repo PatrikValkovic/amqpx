@@ -2,13 +2,14 @@ import { EventEmitter } from 'node:events';
 import * as amqp from 'amqplib';
 import { Queue } from '../queue';
 import { Channel } from '../channel';
-import { deepMerge, head, last, sum } from '../utils';
+import { deepMerge, head, last, sum, sleepPromise } from '../utils';
 import {
     BatchConsumerCallbackFn,
     BatchConsumerOptions,
     BatchFailureStrategy,
     BatchRecord,
     BatchState,
+    ConsumerWrapper,
     ConsumptionFailureStrategy,
     DEFAULT_CONSUMER_OPTIONS,
 } from './types';
@@ -19,8 +20,7 @@ export class BatchConsumerImplementation<Message> extends EventEmitter<BatchCons
     private static readonly DEFAULT_BATCH_SIZE = 20;
 
     private readonly options: Required<BatchConsumerOptions<Message>>;
-    private consumer: amqp.Replies.Consume | null = null;
-    private callback: BatchConsumerCallbackFn<Message> | null = null;
+    private consumer: ConsumerWrapper<BatchConsumerCallbackFn<Message>> | null = null;
     private currentlyProcessingMessages = 0;
     private notifyMessageProcessed: (() => void) | undefined = undefined;
     private batches: BatchRecord<Message>[] = [];
@@ -43,8 +43,10 @@ export class BatchConsumerImplementation<Message> extends EventEmitter<BatchCons
     // some backoff when the connection is lost.
     private readonly channelCloseCallback = () => {
         setTimeout(() => {
-            if (this.callback) {
-                this.listen(this.callback).catch(() => {
+            if (this.consumer) {
+                const { callback } = this.consumer;
+                this.consumer = null;
+                this.listen(callback).catch(() => {
                     void this.close();
                 });
             }
@@ -52,31 +54,43 @@ export class BatchConsumerImplementation<Message> extends EventEmitter<BatchCons
     };
 
     async close(timeout = 30000): Promise<void> {
-        const channel = await this._channel.native();
-        this.consumer?.consumerTag && await channel.cancel(this.consumer.consumerTag);
-        return new Promise((resolve, reject) => {
-            const timeoutHandler = setTimeout(() => {
-                reject(new Error('Consumer close timeout'));
-            }, timeout);
-            this.notifyMessageProcessed = () => {
-                if (this.currentlyProcessingMessages === 0) {
-                    clearTimeout(timeoutHandler);
-                    this._channel.off('close', this.channelCloseCallback);
-                    resolve();
-                }
-            };
-            this.notifyMessageProcessed();
-        });
+        if (this.consumer) {
+            const channel = await this._channel.native();
+
+            const { consumer } = this;
+            await channel.cancel(consumer.amqpConsumer.consumerTag);
+
+            const waitForAllMessagesPromise = new Promise<void>(resolve => {
+                this.notifyMessageProcessed = () => {
+                    if (this.currentlyProcessingMessages === 0)
+                        resolve();
+                };
+                this.notifyMessageProcessed();
+            });
+
+            try {
+                await Promise.race([
+                    waitForAllMessagesPromise,
+                    sleepPromise(timeout).then(() => {
+                        throw new Error('Consumer close timeout');
+                    }),
+                ]);
+            } finally {
+                this.consumer = null;
+            }
+        }
     }
 
     async listen(callback: BatchConsumerCallbackFn<Message>) {
-        this.callback = callback;
+        if (this.consumer)
+            throw new Error('Listener is already attached');
+
         const [channel, queueName] = await Promise.all([
             this._channel.native(),
             this._queue.name(),
         ]);
         await channel.prefetch(this.options.prefetch);
-        this.consumer = await channel.consume(
+        const amqpConsumer = await channel.consume(
             queueName,
             this.messageReceiver.bind(this, callback, channel),
             {
@@ -84,6 +98,7 @@ export class BatchConsumerImplementation<Message> extends EventEmitter<BatchCons
                 noAck: this.shouldAutoAck,
             },
         );
+        this.consumer = { amqpConsumer, callback };
         return this;
     }
 

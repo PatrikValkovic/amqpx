@@ -15,9 +15,6 @@ Ordered roughly by severity.
 
 ### High — Memory Leaks
 
-**B6. `channelCloseCallback` not removed on `close()` timeout**
-`src/consumer/consumer-implementation.ts:45–61`, `src/consumer/batch-consumer-implementation.ts:49–65` — When the timeout branch triggers, the promise rejects but the channel `'close'` listener remains attached, leaking forever.
-
 **B17. `parseMessageFn` failure permanently inflates `currentlyProcessingMessages`**
 `src/consumer/batch-consumer-implementation.ts:132–134` — `currentlyProcessingMessages` is incremented before `await parseMessageFn(content)`. If parsing throws, the message is never added to any batch and `removeProcessedBatches` is never called, so the counter is never decremented. `close()` waits for the counter to reach zero and hangs indefinitely. The broker also holds the message unacked until the channel closes and redelivers it.
 
