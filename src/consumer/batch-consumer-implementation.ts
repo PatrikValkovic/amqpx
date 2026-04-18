@@ -348,11 +348,11 @@ export class BatchConsumerImplementation<Message>
                         batch.state = BatchState.Acknowledged;
                         return;
                     }
-                    await Promise.all([
+                    await Promise.all(
                         batch.messages.map(({ rabbitMessage }) =>
                             originalChannel.ack(rabbitMessage, false),
                         ),
-                    ]);
+                    );
 
                     batch.state = BatchState.Acknowledged;
                     this.removeProcessedBatches();

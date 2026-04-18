@@ -10,9 +10,6 @@ Ordered roughly by severity.
 
 ### Critical — Data Loss / Deadlock
 
-**B16. `removeProcessedBatches` range compaction silently skips middle indexes**
-`src/consumer/batch-consumer-implementation.ts:311–319` — The `forEach` that compresses sorted indexes into splice ranges calls `return` when a consecutive index is found but never updates `currentEnd`. For a run `[0, 1, 2]`: index `1` is consecutive so the loop returns with `currentEnd` still `0`; index `2` then fails the `currentEnd + 1` test, pushes range `[0, 0]`, and starts a new range `[2, 2]`. After `splice(0, 1)` the array shifts by one, making the second `splice(2, 1)` a no-op. The batch at original index `1` is never removed, its messages leak, `currentlyProcessingMessages` is never decremented, the broker holds unacked messages, and `close()` hangs indefinitely. Triggered whenever three or more consecutive batches are acknowledged at once (e.g., with `maxWaitTimeForAck > 0`).
-
 ### High — Memory Leaks
 
 **B17. `parseMessageFn` failure permanently inflates `currentlyProcessingMessages`**
@@ -23,8 +20,24 @@ Ordered roughly by severity.
 **B11. Consumer uses stale channel reference for ack/nack**
 `src/consumer/consumer-implementation.ts:92–96`, `src/consumer/batch-consumer-implementation.ts:69–81` — `originalChannel` is captured at `listen()` time. If the channel is internally recreated, all ack/nack calls after reconnection target the old, closed channel. In `BatchConsumerImplementation` the stale capture is compounded: the timer callback additionally closes over `originalChannel` from whichever `messageReceiver` coroutine started the timer, which may be from a previous channel generation.
 
-**B18. `stillConnected` guard is stale for timer-triggered batch processing**
-`src/consumer/batch-consumer-implementation.ts:125–177` — Each `messageReceiver` coroutine registers a `'close'` handler (line 129) that sets `stillConnected.value = false`. For the batch-full path the handler is still live while `handleBatch` awaits, so a channel close is detected correctly. For the timer path `messageReceiver` returns after setting the timer and the `finally` block (line 176) removes the handler immediately — before the timer fires. If the channel closes during the timer delay `stillConnected.value` is never set to `false`, and `handleBatch` proceeds to ACK messages on the closed channel.
+**B18. Concurrent `planMessageAcknowledgment` calls double-ack with `multiple=true`**
+`src/consumer/batch-consumer-implementation.ts:298–361` — Two batches finishing concurrently (sub-batches of a `splitBatch`, or a `confirmTimer` firing while another batch's `handleBatch` also completes) both enter `planMessageAcknowledgment`. Both compute `batchesToConfirm` before either marks its batches `Acknowledged`, so both issue `channel.ack(lastMessage, true)` across an overlapping delivery-tag window. The second ack re-acks already-confirmed tags; amqplib raises PRECONDITION_FAILED and closes the channel.
+
+**B19. `clearTimeout` cannot cancel a timer callback that has already been queued**
+`src/consumer/batch-consumer-implementation.ts:103–126` — When the newest message fills the batch to `effectiveBatchSize`, `messageReceiver` calls `clearTimeout(this.batchFillTimer)` and then `handleBatch(lastBatch)`. If the timer already fired in the same event-loop tick (easy when `maxWaitTimeForBatch` is 0, or when async work under the receiver stalled past the delay), `clearTimeout` is a no-op. The queued timer callback and the size-path receiver both invoke `handleBatch` on the same batch, re-running the user callback and corrupting `batch.state`. The timer callback then triggers B18 in its `finally`.
+
+**B20. `batchFillTimer` closure captures a `lastBatch` that may be retired before the timer fires**
+`src/consumer/batch-consumer-implementation.ts:116–126` — The timer's arrow function closes over the `lastBatch` local of the receiver invocation that installed it. Later receivers may push to that same batch, hit the size threshold, move it through `Processing → Processed → Acknowledged`, and splice it out of `this.batches` — all while `clearTimeout` fails to cancel the already-queued timer (B19). The timer then runs `handleBatch` on a retired batch with no state guard, re-invoking the user callback and manipulating a batch that no longer belongs to the consumer.
+
+**B21. `splitBatch` runs sub-batches in parallel, multiplying the ack race**
+`src/consumer/batch-consumer-implementation.ts:255–273` — `Promise.all(splitBatches.map(batch => this.handleBatch(...)))` deliberately runs every sub-batch's `handleBatch` concurrently. Each sub-batch's `finally` calls `planMessageAcknowledgment`, so a single failed batch of N messages produces up to N overlapping invocations that all race per B18. If some sub-batches succeed and others fail, the failing sub-batches' `handleBatchError → nackMessages` path interleaves with the successful sub-batches' `planMessageAcknowledgment → ack` path, and the resulting ack/nack sequence depends purely on scheduler ordering.
+
+**B22. `messageReceiver` re-entrancy window after `parseMessageFn` await**
+`src/consumer/batch-consumer-implementation.ts:82–100` — amqplib dispatches the consume callback per message without waiting for the previous invocation to resolve. Each `messageReceiver` awaits `parseMessageFn`, yielding control. Two concurrent invocations can both resume, both observe `last(this.batches)?.state === BatchState.WaitingForData`, and both push into the same batch. The size check runs in whichever receiver resumes last — if the concurrent increments stepped past `effectiveBatchSize` inside a single receiver's sync block, only that receiver triggers `handleBatch` and the others return assuming the batch still has room and may re-arm the timer. Combined with B19, this is how double-processing becomes reachable in practice.
+
+**B23. `confirmTimer` callback races against a later `planMessageAcknowledgment` on the same messages**
+`src/consumer/batch-consumer-implementation.ts:341–360` — A `confirmTimer` is attached to every `Processed` batch blocked behind an earlier unprocessed batch. When the earlier batch eventually completes, a fresh `planMessageAcknowledgment` call sweeps forward, calls `clearTimeout(batch.confirmTimer)`, and issues `ack(..., multiple=true)` across the whole block. But if the timer has already fired and its callback is mid-`await Promise.all(channel.ack(msg, false))`, `clearTimeout` is a no-op; both ack flows are in flight simultaneously against the same delivery tags — a per-message ack plus a `multiple=true` ack that covers it, or the reverse — either of which amqplib rejects as a protocol error.
+
 
 
 ---
