@@ -49,4 +49,8 @@ export class TestConnection extends EventEmitter implements Connection {
     native = vitest.fn().mockResolvedValue(undefined);
 
     state = vitest.fn().mockReturnValue(ConnectionState.connected);
+
+    simulateDisconnect(): void {
+        this.emit('reconnecting');
+    }
 }

@@ -23,9 +23,6 @@ Ordered roughly by severity.
 **B21. `splitBatch` runs sub-batches in parallel, multiplying the ack race**
 `src/consumer/batch-consumer-implementation.ts:255–273` — `Promise.all(splitBatches.map(batch => this.handleBatch(...)))` deliberately runs every sub-batch's `handleBatch` concurrently. Each sub-batch's `finally` calls `planMessageAcknowledgment`, so a single failed batch of N messages produces up to N overlapping invocations that all race per B18. If some sub-batches succeed and others fail, the failing sub-batches' `handleBatchError → nackMessages` path interleaves with the successful sub-batches' `planMessageAcknowledgment → ack` path, and the resulting ack/nack sequence depends purely on scheduler ordering.
 
-**B22. `messageReceiver` re-entrancy window after `parseMessageFn` await**
-`src/consumer/batch-consumer-implementation.ts:82–100` — amqplib dispatches the consume callback per message without waiting for the previous invocation to resolve. Each `messageReceiver` awaits `parseMessageFn`, yielding control. Two concurrent invocations can both resume, both observe `last(this.batches)?.state === BatchState.WaitingForData`, and both push into the same batch. The size check runs in whichever receiver resumes last — if the concurrent increments stepped past `effectiveBatchSize` inside a single receiver's sync block, only that receiver triggers `handleBatch` and the others return assuming the batch still has room and may re-arm the timer. Combined with B19, this is how double-processing becomes reachable in practice.
-
 **B23. `confirmTimer` callback races against a later `planMessageAcknowledgment` on the same messages**
 `src/consumer/batch-consumer-implementation.ts:341–360` — A `confirmTimer` is attached to every `Processed` batch blocked behind an earlier unprocessed batch. When the earlier batch eventually completes, a fresh `planMessageAcknowledgment` call sweeps forward, calls `clearTimeout(batch.confirmTimer)`, and issues `ack(..., multiple=true)` across the whole block. But if the timer has already fired and its callback is mid-`await Promise.all(channel.ack(msg, false))`, `clearTimeout` is a no-op; both ack flows are in flight simultaneously against the same delivery tags — a per-message ack plus a `multiple=true` ack that covers it, or the reverse — either of which amqplib rejects as a protocol error.
 
@@ -40,7 +37,6 @@ Ordered roughly by severity.
 - **`any[]` in event handler callbacks** — `connection-implementation.ts:33–34`, `consumer-implementation.ts:35–36`, `producer-implementation.ts:77–78`. Replace with typed overload signatures per event name.
 - **`ZodValidatedConsumer` type parameter mismatch** — `extensions/zod/zod-validated-consumer.ts:33`. Second generic param of `z.ZodType` should be `z.ZodTypeDef`, not the input message type.
 - **`deepMerge` uses multiple `as any` casts** — `utils.ts:25–29`. Strengthening types here would catch silent option-merging bugs.
-- **`externallyResolvedPromise` requires `// @ts-expect-error`** — `utils.ts:1–8`. The resolve variable assignment is not type-safe; use a safer factory pattern.
 
 ### Unbounded Recursion in `publish()` on Repeated Backpressure
 
@@ -60,12 +56,6 @@ The library docs and channel interface comments warn that "each producer/consume
 ## 3. DEVIL'S ADVOCATE CONCERNS
 
 The following are architectural-level concerns that cannot be fixed with small patches. They are recorded here so design decisions are made consciously.
-
-### Abstraction Value vs. Complexity Cost
-
-Every interface still exposes raw amqplib types (`amqp.Options.Publish`, `amqp.ConsumeMessage`, `amqp.Channel`, etc.). Users must understand amqplib to use this library effectively. The 4–5 layer hierarchy (Connection → Channel → Exchange/Queue → Producer/Consumer) multiplies cognitive load without fully hiding the underlying model.
-
-**Implication**: Consider whether the interfaces should aim for full abstraction (no amqplib leakage) or explicitly embrace being a thin typed wrapper. Sitting between the two satisfies neither goal well.
 
 ### Silent Failure by Design
 
@@ -104,24 +94,13 @@ Exchange bindings are stored on the instance (`this.bindings`). If an Exchange i
 
 ## 4. MISSING FEATURES & EXTENSIONS
 
-### Tier 2 — Observability (Required for Production Operations)
 
-| Feature                                          | Why Needed                                                                     |
-|--------------------------------------------------|--------------------------------------------------------------------------------|
-| **Logger interface injection**                   | No way to centralize library log output; errors surface only via EventEmitter. |
-| **Metrics hooks (Prometheus/StatsD compatible)** | No counters for publishes, consumes, retries, failures, or latency.            |
-| **OpenTelemetry distributed tracing extension**  | No trace context propagation across message boundaries.                        |
-| **Health check / readiness probe abstraction**   | Kubernetes/orchestration systems need liveness/readiness signals.              |
+| Feature                         | Why Needed                                                                     |
+|---------------------------------|--------------------------------------------------------------------------------|
+| **Logger interface injection**  | No way to centralize library log output; errors surface only via EventEmitter. |
+| **RPC / request-reply pattern** | Very common; requires manual `reply_to`/`correlationId` wiring today.          |
 
-### Tier 3 — Messaging Patterns
-
-| Feature                          | Why Needed                                                                                     |
-|----------------------------------|------------------------------------------------------------------------------------------------|
-| **RPC / request-reply pattern**  | Very common; requires manual `reply_to`/`correlationId` wiring today.                          |
-| **Consumer middleware pipeline** | No preprocessing chain (decompression, decryption, validation) without modifying handler code. |
-| **Producer middleware pipeline** | `beforeSend`/`afterSend` hooks exist but are not composable as a chain.                        |
-
-### Tier 5 — Testing Improvements
+### Testing Improvements
 
 - `testConnection.simulateDisconnect()` — simulate network failure
 - `testChannel.simulateClose()` — trigger channel close event
@@ -129,7 +108,6 @@ Exchange bindings are stored on the instance (`this.bindings`). If an Exchange i
 - `testConsumer.deliverMessage(msg)` — push a test message into the handler
 - Simulated drain backpressure in `TestChannel`
 
-### Tier 6 — Framework Integration
+### Framework Integration
 
-- **NestJS module** — Decorators (`@RabbitProducer`, `@RabbitConsumer`), DI integration, health check provider
 - **Graceful shutdown improvements** — Parallel consumer shutdown, force-close after timeout with proper NACK of in-flight messages

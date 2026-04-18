@@ -34,4 +34,8 @@ export class TestProducer<T> extends EventEmitter implements Producer<T> {
     publish = vitest.fn().mockImplementation(msg => Promise.resolve(msg));
 
     getChannel = vitest.fn().mockImplementation(() => new TestChannel());
+
+    getPublishedMessages(): T[] {
+        return this.publish.mock.calls.map(([msg]) => msg as T);
+    }
 }

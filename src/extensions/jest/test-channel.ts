@@ -25,6 +25,11 @@ import { TestConsumer, TestExchange, TestProducer, TestQueue } from '.';
  */
 export class TestChannel extends EventEmitter implements Channel {
 
+    constructor() {
+        super();
+        this.setMaxListeners(0);
+    }
+
     consumeResponse = {
         consumerTag: crypto.randomUUID(),
     };
@@ -67,11 +72,37 @@ export class TestChannel extends EventEmitter implements Channel {
 
     native = jest.fn().mockImplementation(() => Promise.resolve(this.nativeChannel));
 
-    publish = jest.fn().mockImplementation(() => Promise.resolve());
+    private _drainPending = false;
+    private _drainResolvers: Array<() => void> = [];
+
+    publish = jest.fn().mockImplementation((): Promise<void> => {
+        if (this._drainPending) {
+            return new Promise<void>(resolve => {
+                this._drainResolvers.push(resolve);
+            });
+        }
+        return Promise.resolve();
+    });
 
     checkQueue = jest.fn().mockImplementation((queue: string) => Promise.resolve({
         queue,
         messageCount: 0,
         consumerCount: 0,
     }));
+
+    simulateClose(): void {
+        this.emit('close');
+    }
+
+    simulateDrainBackpressure(): void {
+        this._drainPending = true;
+    }
+
+    releaseDrain(): void {
+        this._drainPending = false;
+        const resolvers = this._drainResolvers.splice(0);
+        this.emit('drain');
+        for (const resolve of resolvers)
+            resolve();
+    }
 }

@@ -29,4 +29,8 @@ export class TestProducer<T> extends EventEmitter implements Producer<T> {
     publish = jest.fn().mockImplementation(msg => Promise.resolve(msg));
 
     getChannel = jest.fn().mockImplementation(() => new TestChannel());
+
+    getPublishedMessages(): T[] {
+        return this.publish.mock.calls.map(([msg]) => msg as T);
+    }
 }

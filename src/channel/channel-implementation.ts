@@ -4,8 +4,7 @@ import { ConfirmChannel, Replies } from 'amqplib';
 import { Connection } from '../connection';
 import { Exchange, ExchangeImplementation, ExchangeTypes } from '../exchange';
 import { Queue, QueueImplementation, QueueOptions } from '../queue';
-import { ProducerOptions } from '../producer/types';
-import { Producer } from '../producer';
+import { ProducerOptions, Producer } from '../producer';
 import { ExchangeConsumerQueueOptions, ExchangeOptions } from '../exchange/types';
 import { Consumer, ConsumerOptions } from '../consumer';
 import { DEFAULT_RETRY_STRATEGY, retryLoop } from '../retry';
@@ -112,7 +111,6 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
 
         if (this.drainPromise)
             await this.drainPromise;
-
 
         let publishResult: boolean;
         if (!this.wrapper.isConfirmed) {

@@ -49,4 +49,8 @@ export class TestConnection extends EventEmitter implements Connection {
     native = jest.fn().mockResolvedValue(undefined);
 
     state = jest.fn().mockReturnValue(ConnectionState.connected);
+
+    simulateDisconnect(): void {
+        this.emit('reconnecting');
+    }
 }

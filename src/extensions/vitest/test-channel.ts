@@ -60,13 +60,39 @@ export class TestChannel extends EventEmitter implements Channel {
 
     native = vitest.fn().mockImplementation(() => Promise.resolve(this.nativeChannel));
 
-    publish = vitest.fn().mockImplementation(() => Promise.resolve());
+    private _drainPending = false;
+    private _drainResolvers: Array<() => void> = [];
+
+    publish = vitest.fn().mockImplementation((): Promise<void> => {
+        if (this._drainPending) {
+            return new Promise<void>(resolve => {
+                this._drainResolvers.push(resolve);
+            });
+        }
+        return Promise.resolve();
+    });
 
     checkQueue = vitest.fn().mockImplementation((queue: string) => Promise.resolve({
         queue,
         messageCount: 0,
         consumerCount: 0,
     }));
+
+    simulateClose(): void {
+        this.emit('close');
+    }
+
+    simulateDrainBackpressure(): void {
+        this._drainPending = true;
+    }
+
+    releaseDrain(): void {
+        this._drainPending = false;
+        const resolvers = this._drainResolvers.splice(0);
+        this.emit('drain');
+        for (const resolve of resolvers)
+            resolve();
+    }
 
     consumeResponse = {
         consumerTag: crypto.randomUUID(),

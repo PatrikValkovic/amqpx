@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
-import { Consumer } from '../../index';
+import type * as amqp from 'amqplib';
+import { Consumer, ConsumerCallbackFn } from '../../index';
 import { TestQueue } from './test-queue';
 import { TestChannel } from './test-channel';
 
@@ -46,4 +47,37 @@ export class TestConsumer<T> extends EventEmitter implements Consumer<T> {
     queue = new TestQueue();
 
     channel = new TestChannel();
+
+    async deliverMessage(
+        message: T,
+        options: { serialize?(msg: T): Buffer } & Omit<Partial<amqp.ConsumeMessage>, 'content'> = {},
+    ): Promise<void> {
+        const { calls } = this.listen.mock;
+        const lastCall = calls.length > 0 ? calls[calls.length - 1] : [];
+        const callback = lastCall[0] as ConsumerCallbackFn<T> | undefined;
+        if (!callback)
+            throw new Error('No listener registered. Call listen() before deliverMessage().');
+
+        const {
+            serialize = (msg: T) => Buffer.from(JSON.stringify(msg)),
+            ...rest
+        } = options;
+
+        const raw: amqp.ConsumeMessage = {
+            content: serialize(message),
+            fields: {
+                deliveryTag: 1,
+                redelivered: false,
+                exchange: '',
+                routingKey: '',
+                consumerTag: '',
+                ...rest.fields,
+            },
+            properties: {
+                headers: {},
+                ...rest.properties,
+            } as amqp.MessageProperties,
+        };
+        await callback({ channel: this.channel, message, rabbitMessage: raw });
+    }
 }
