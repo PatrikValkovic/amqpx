@@ -57,15 +57,6 @@ The library docs and channel interface comments warn that "each producer/consume
 
 The following are architectural-level concerns that cannot be fixed with small patches. They are recorded here so design decisions are made consciously.
 
-### Silent Failure by Design
-
-Auto-reconnection loops, consumer reconnects, and publish errors all default to silent swallowing. In production:
-- There is no structured logging hook
-- There is no way to detect that a consumer is in a dead state short of watching for `handlingFailed` events
-- There is no circuit breaker
-
-**Implication**: The library is operationally opaque. Add at minimum: a logger interface injection point, and expose a "is this consumer/connection healthy" property.
-
 ### Exactly-Once Is Impossible Without Deduplication
 
 The 5-second error window in the producer (`producer-implementation.ts:43–62`) can cause message duplication on network errors. Combined with the `Drop` default in consumers, this means at-least-once delivery for the producer and at-most-once for the consumer. The combination means messages can be both duplicated AND dropped depending on timing.
@@ -99,14 +90,6 @@ Exchange bindings are stored on the instance (`this.bindings`). If an Exchange i
 |---------------------------------|--------------------------------------------------------------------------------|
 | **Logger interface injection**  | No way to centralize library log output; errors surface only via EventEmitter. |
 | **RPC / request-reply pattern** | Very common; requires manual `reply_to`/`correlationId` wiring today.          |
-
-### Testing Improvements
-
-- `testConnection.simulateDisconnect()` — simulate network failure
-- `testChannel.simulateClose()` — trigger channel close event
-- `testProducer.getPublishedMessages()` — assert on published payloads
-- `testConsumer.deliverMessage(msg)` — push a test message into the handler
-- Simulated drain backpressure in `TestChannel`
 
 ### Framework Integration
 
