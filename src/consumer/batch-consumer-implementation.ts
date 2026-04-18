@@ -93,7 +93,7 @@ export class BatchConsumerImplementation<Message>
         // Add message to the last batch
         const lastBatch = last(this.batches);
         if (!lastBatch)
-            throw this.processError('Internal error: Cannot get last batch, should never happen');
+            throw this.processError('Internal error: Cannot get last batch');
         lastBatch.messages.push({
             message: parsed,
             rabbitMessage: msg,
@@ -193,7 +193,7 @@ export class BatchConsumerImplementation<Message>
 
         const indexOfBatch = this.batches.indexOf(batch);
         if (indexOfBatch < 0)
-            throw this.processError('Internal error: Cannot find batch in the list of batches, should never happen');
+            throw this.processError('Internal error: Cannot find batch in the list of batches');
 
         const strategy = this.options.batchFailureStrategy;
         if (strategy === BatchFailureStrategy.Reject || batch.messages.length <= 1)
@@ -242,7 +242,7 @@ export class BatchConsumerImplementation<Message>
         } else if (indexOfBatch === 0) {
             const lastMessage = last(batch.messages);
             if (!lastMessage)
-                throw this.processError('Internal error: Last message in batch not found during nack, should never happen');
+                throw this.processError('Internal error: Last message in batch not found during nack');
             // keep await there in case API change in the future
             await originalChannel.nack(lastMessage.rabbitMessage, true, requeue);
         } else {
@@ -285,7 +285,7 @@ export class BatchConsumerImplementation<Message>
         for (const index of indicesOfBatchesToRemove.reverse()) {
             const batch = this.batches[index];
             if (!batch)
-                throw this.processError('Internal error: Batch for removal not found, should never happen');
+                throw this.processError('Internal error: Batch for removal not found');
             this.batches.splice(index, 1);
             clearTimeout(batch.confirmTimer);
             batch.confirmTimer = undefined;
@@ -325,10 +325,10 @@ export class BatchConsumerImplementation<Message>
         if (batchesToConfirm.length > 0) {
             const lastConfirmBatch = last(batchesToConfirm);
             if (!lastConfirmBatch)
-                throw this.processError('Internal Error: Last batch for confirmation not found, should never happen');
+                throw this.processError('Internal Error: Last batch for confirmation not found');
             const lastMessageOfLastConfirmBatch = last(lastConfirmBatch.messages);
             if (!lastMessageOfLastConfirmBatch)
-                throw this.processError('Internal Error: Last batch or last message for confirmation not found, should never happen');
+                throw this.processError('Internal Error: Last batch or last message for confirmation not found');
             // keep await there in case API change in the future
             await originalChannel.ack(lastMessageOfLastConfirmBatch.rabbitMessage, true);
         }

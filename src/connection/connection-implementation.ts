@@ -114,7 +114,7 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
             await this.connect();
         const establishedConnection = await this.connection;
         if (!establishedConnection)
-            throw new Error('Connection is null after connect, this should never happen. If you see this error, report it as a bug.');
+            throw new Error('Internal error: Connection is null after connect');
         return establishedConnection;
     }
 
