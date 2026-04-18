@@ -1,3 +1,5 @@
+import { MaybePromise } from './types';
+
 export const sleepPromise = (ms: number) =>
     new Promise<void>(resolve => setTimeout(resolve, ms));
 
@@ -53,5 +55,19 @@ export function swallowError<T>(callback: ((() => Promise<T>) | (() => T) | Prom
         return result;
     } catch {
         return null;
+    }
+}
+
+
+export function tryCatchExpression<T>(_try: () => Promise<T>, _catch: (err: unknown) => MaybePromise<T>): Promise<T>;
+export function tryCatchExpression<T>(_try: () => T, _catch: (err: unknown) => T): T;
+export function tryCatchExpression<T>(_try: () => T, _catch: (err: unknown) => T) {
+    try {
+        const result = _try();
+        if (result instanceof Promise || (typeof result === 'object' && result !== null && 'catch' in result && typeof result.catch === 'function'))
+            return (result as unknown as Promise<T>).catch(err => _catch(err));
+        return result;
+    } catch (err) {
+        return _catch(err);
     }
 }

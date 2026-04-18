@@ -905,6 +905,59 @@ describe('Batch consumer implementation', () => {
         });
     });
 
+    describe('parseMessageFn', () => {
+        test('close() should resolve after parseMessageFn throws', async () => {
+            const parseError = new Error('parse failure');
+            const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    parseMessageFn: () => {
+                        throw parseError;
+                    },
+                },
+            );
+
+            await consumerWithBadParser.listen(vi.fn());
+
+            const consumerHandler = channel.nativeChannel.consume.mock.lastCall![1];
+            const rabbitMessage = { content: Buffer.from('{}') };
+
+            // Delivering a message whose parsing throws should not inflate
+            // currentlyProcessingMessages permanently.
+            await expect(consumerHandler(rabbitMessage)).rejects.toThrow(parseError);
+
+            // close() must resolve without timing out
+            await expect(consumerWithBadParser.close(500)).resolves.toBeUndefined();
+        });
+
+        test('close() should resolve even if parsing is asynchronous', async () => {
+            const parseError = new Error('parse failure');
+            const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    parseMessageFn: async () => {
+                        await sleepPromise(250);
+                        throw parseError;
+                    },
+                },
+            );
+
+            await consumerWithBadParser.listen(vi.fn());
+
+            const consumerHandler = channel.nativeChannel.consume.mock.lastCall![1];
+            const rabbitMessage = { content: Buffer.from('{}') };
+
+            const consumePromise = consumerHandler(rabbitMessage);
+            await sleepPromise(50);
+            await expect(consumerWithBadParser.close(500)).resolves.toBeUndefined();
+            await expect(consumePromise).rejects.toThrow(parseError);
+        });
+    });
+
     test('should not allow split batch failure strategy with batch size of 1', () => {
         expect(() => new BatchConsumerImplementation(
             channel,

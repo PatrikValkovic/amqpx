@@ -8,15 +8,6 @@ Aggregate findings from five independent analysis agents: code review, bug hunti
 
 Ordered roughly by severity.
 
-### Critical — Data Loss / Deadlock
-
-### High — Memory Leaks
-
-**B17. `parseMessageFn` failure permanently inflates `currentlyProcessingMessages`**
-`src/consumer/batch-consumer-implementation.ts:132–134` — `currentlyProcessingMessages` is incremented before `await parseMessageFn(content)`. If parsing throws, the message is never added to any batch and `removeProcessedBatches` is never called, so the counter is never decremented. `close()` waits for the counter to reach zero and hangs indefinitely. The broker also holds the message unacked until the channel closes and redelivers it.
-
-### High — Race Conditions / State Corruption
-
 **B11. Consumer uses stale channel reference for ack/nack**
 `src/consumer/consumer-implementation.ts:92–96`, `src/consumer/batch-consumer-implementation.ts:69–81` — `originalChannel` is captured at `listen()` time. If the channel is internally recreated, all ack/nack calls after reconnection target the old, closed channel. In `BatchConsumerImplementation` the stale capture is compounded: the timer callback additionally closes over `originalChannel` from whichever `messageReceiver` coroutine started the timer, which may be from a previous channel generation.
 

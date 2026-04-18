@@ -1,7 +1,7 @@
 import * as amqp from 'amqplib';
 import { Queue } from '../queue';
 import { Channel } from '../channel';
-import { deepMerge, last } from '../utils';
+import { deepMerge, last, tryCatchExpression } from '../utils';
 import {
     BatchConsumerCallbackFn,
     BatchConsumerOptions,
@@ -80,7 +80,14 @@ export class BatchConsumerImplementation<Message>
 
         this.currentlyProcessingMessages++;
         const { content } = msg;
-        const parsed = await this.options.parseMessageFn(content);
+        const parsed = await tryCatchExpression(
+            () => this.options.parseMessageFn(content),
+            err => {
+                this.currentlyProcessingMessages--;
+                this.notifyMessageProcessed?.();
+                throw err;
+            },
+        );
 
         // Create new batch if necessary
         if (this.batches.length === 0 || last(this.batches)?.state !== BatchState.WaitingForData) {
