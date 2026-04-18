@@ -537,17 +537,22 @@ describe('Batch consumer implementation', () => {
             await consumePromise;
 
             expect(listener).toHaveBeenCalledTimes(6);
-            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(3);
-            expect(channel.nativeChannel.ack.mock.calls).toEqual([
-                [rabbitMessages[1], true],
-                [rabbitMessages[3], true],
-                [rabbitMessages[4], true],
-            ]);
             expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(2);
             expect(channel.nativeChannel.nack.mock.calls).toEqual([
                 [rabbitMessages[0], true, false],
-                [rabbitMessages[2], true, false],
+                [rabbitMessages[2], false, false],
             ]);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.ack.mock.calls).toEqual([
+                [rabbitMessages[4], true],
+            ]);
+
+            const nackCallOrder = channel.nativeChannel.nack.mock.invocationCallOrder;
+            const ackCallOrder = channel.nativeChannel.ack.mock.invocationCallOrder;
+            expect(ackCallOrder).toHaveLength(1);
+            expect(nackCallOrder).toHaveLength(2);
+            expect(nackCallOrder[0]).toBeLessThan(nackCallOrder[1] as number);
+            expect(nackCallOrder[1]).toBeLessThan(ackCallOrder[0] as number);
         });
 
         test('should handle each message individually for requeue strategy', async () => {
@@ -573,17 +578,22 @@ describe('Batch consumer implementation', () => {
             await consumePromise;
 
             expect(listener).toHaveBeenCalledTimes(6);
-            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(3);
-            expect(channel.nativeChannel.ack.mock.calls).toEqual([
-                [rabbitMessages[1], true],
-                [rabbitMessages[3], true],
-                [rabbitMessages[4], true],
-            ]);
             expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(2);
             expect(channel.nativeChannel.nack.mock.calls).toEqual([
                 [rabbitMessages[0], true, true],
-                [rabbitMessages[2], true, true],
+                [rabbitMessages[2], false, true],
             ]);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.ack.mock.calls).toEqual([
+                [rabbitMessages[4], true],
+            ]);
+
+            const nackCallOrder = channel.nativeChannel.nack.mock.invocationCallOrder;
+            const ackCallOrder = channel.nativeChannel.ack.mock.invocationCallOrder;
+            expect(ackCallOrder).toHaveLength(1);
+            expect(nackCallOrder).toHaveLength(2);
+            expect(nackCallOrder[0]).toBeLessThan(nackCallOrder[1] as number);
+            expect(nackCallOrder[1]).toBeLessThan(ackCallOrder[0] as number);
         });
     });
 

@@ -46,6 +46,7 @@ export enum BatchState {
     Processing = 'Processing',
     Processed = 'Processed',
     Failed = 'Failed',
+    Acknowledged = 'Acknowledged',
 }
 
 export type ConsumerCallbackArgs<Message, AdditionalProperties = Record<string, unknown>> = {

@@ -33,10 +33,6 @@ export const last = <T>(arr: T[]) => {
     return arr[index];
 };
 
-export const head = <T>(arr: T[]) => arr[0];
-
-export const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
-
 export const zip = <T, U>(arr1: T[], arr2: U[]) => {
     const length = Math.min(arr1.length, arr2.length);
     const result: Array<[T, U]> = [];

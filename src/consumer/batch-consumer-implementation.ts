@@ -1,7 +1,7 @@
 import * as amqp from 'amqplib';
 import { Queue } from '../queue';
 import { Channel } from '../channel';
-import { deepMerge, head, last, sum } from '../utils';
+import { deepMerge, last } from '../utils';
 import {
     BatchConsumerCallbackFn,
     BatchConsumerOptions,
@@ -45,7 +45,7 @@ export class BatchConsumerImplementation<Message>
             ]);
 
             await channel.prefetch(this.options.prefetch);
-            // this must be object, so it is passed down as reference
+            // this must be an object, so it is passed down as reference
             const stillConnected = { value: true };
             this.channel.once('close', () => {
                 stillConnected.value = false;
@@ -164,15 +164,12 @@ export class BatchConsumerImplementation<Message>
                 messages: batch.messages,
                 channel: this.channel,
             });
-            if (!stillConnected.value) {
-                this.removeProcessedBatches(batch);
-                return;
-            }
-
             batch.state = BatchState.Processed;
-            await this.planMessageAcknowledgment(stillConnected, originalChannel);
         } catch {
             await this.handleBatchError(callback, originalChannel, batch, stillConnected);
+        } finally {
+            await this.planMessageAcknowledgment(stillConnected, originalChannel);
+            this.removeProcessedBatches();
         }
     }
 
@@ -183,8 +180,14 @@ export class BatchConsumerImplementation<Message>
         stillConnected: { value: boolean },
     ) {
         batch.state = BatchState.Failed;
+
         if (!stillConnected.value) {
-            this.removeProcessedBatches(batch);
+            batch.state = BatchState.Acknowledged;
+            this.batches.filter(batch =>
+                batch.state === BatchState.Processed,
+            ).forEach(batch => {
+                batch.state = BatchState.Acknowledged;
+            });
             return;
         }
 
@@ -193,14 +196,12 @@ export class BatchConsumerImplementation<Message>
             throw this.processError('Internal error: Cannot find batch in the list of batches, should never happen');
 
         const strategy = this.options.batchFailureStrategy;
-        if (strategy === BatchFailureStrategy.Reject || batch.messages.length <= 1) {
+        if (strategy === BatchFailureStrategy.Reject || batch.messages.length <= 1)
             await this.handleFailureStrategy(originalChannel, batch, stillConnected, indexOfBatch);
-        } else if (strategy === BatchFailureStrategy.Split) {
+        else if (strategy === BatchFailureStrategy.Split)
             await this.splitBatch(originalChannel, batch, stillConnected, indexOfBatch, callback);
-        } else {
-            this.removeProcessedBatches(batch);
+        else
             throw this.processError(`Not supported batch failure strategy: ${strategy}`);
-        }
     }
 
     private async handleFailureStrategy(
@@ -216,35 +217,39 @@ export class BatchConsumerImplementation<Message>
             break;
 
         case ConsumptionFailureStrategy.Requeue:
-            this.nackMessages(originalChannel, batch, indexOfBatch, true);
-            this.removeProcessedBatches(batch);
+            await this.nackMessages(originalChannel, batch, indexOfBatch, true);
             break;
 
         case ConsumptionFailureStrategy.Reject:
-            this.nackMessages(originalChannel, batch, indexOfBatch, false);
-            this.removeProcessedBatches(batch);
+            await this.nackMessages(originalChannel, batch, indexOfBatch, false);
             break;
 
         default:
-            this.removeProcessedBatches(batch);
             throw this.processError(`Not supported failure strategy: ${this.options.failureStrategy}`);
         }
     }
 
-    private nackMessages(
+    private async nackMessages(
         originalChannel: amqp.Channel,
         batch: BatchRecord<Message>,
         indexOfBatch: number,
         requeue: boolean,
     ) {
         if (indexOfBatch > 0) {
-            batch.messages.forEach(msg => originalChannel.nack(msg.rabbitMessage, false, requeue));
+            await Promise.all(batch.messages.map(msg =>
+                originalChannel.nack(msg.rabbitMessage, false, requeue),
+            ));
         } else if (indexOfBatch === 0) {
             const lastMessage = last(batch.messages);
             if (!lastMessage)
-                throw new Error('Encountered empty batch');
-            originalChannel.nack(lastMessage.rabbitMessage, true, requeue);
+                throw this.processError('Internal error: Last message in batch not found during nack, should never happen');
+            // keep await there in case API change in the future
+            await originalChannel.nack(lastMessage.rabbitMessage, true, requeue);
+        } else {
+            throw this.processError('Internal error: Negative batch index during nack');
         }
+
+        batch.state = BatchState.Acknowledged;
     }
 
     private async splitBatch(
@@ -267,80 +272,90 @@ export class BatchConsumerImplementation<Message>
         )));
     }
 
-    private removeProcessedBatches(batch: BatchRecord<Message> | Array<BatchRecord<Message>>) {
-        const batchesToRemove = Array.isArray(batch) ? batch : [batch];
-        if (batchesToRemove.length === 0)
+    private removeProcessedBatches() {
+        const indicesOfBatchesToRemove = this.batches
+            .flatMap((b, i) => {
+                if (b.state === BatchState.Acknowledged)
+                    return [i];
+                return [];
+            });
+        if (indicesOfBatchesToRemove.length === 0)
             return;
-        const removeAtIndexes = batchesToRemove
-            .map(b => this.batches.indexOf(b))
-            .sort((a, b) => a - b);
-        if (removeAtIndexes.some(i => i < 0))
-            throw this.processError('Internal error: Cannot find batch to remove in the list of batches, should never happen');
 
-        // turn indexes into ranges so number of splice calls is reduced
-        const rangesToRemove: Array<[number, number]> = [];
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        let currentStart: number = head(removeAtIndexes)!;
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        let currentEnd: number = head(removeAtIndexes)!;
-        removeAtIndexes.slice(1).forEach(batchIndex => {
-            if (batchIndex === currentEnd + 1)
-                return;
-            rangesToRemove.push([currentStart, currentEnd]);
-            currentStart = batchIndex;
-            currentEnd = batchIndex;
-        });
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        rangesToRemove.push([currentStart!, last(removeAtIndexes)!]);
+        for (const index of indicesOfBatchesToRemove.reverse()) {
+            const batch = this.batches[index];
+            if (!batch)
+                throw this.processError('Internal error: Batch for removal not found, should never happen');
+            this.batches.splice(index, 1);
+            clearTimeout(batch.confirmTimer);
+            batch.confirmTimer = undefined;
+            this.currentlyProcessingMessages -= batch.messages.length;
+        }
 
-        for (const [from, to] of rangesToRemove)
-            this.batches.splice(from, to - from + 1);
-
-        this.currentlyProcessingMessages -= sum(batchesToRemove.map(b => b.messages.length));
         this.notifyMessageProcessed?.();
     }
 
     private async planMessageAcknowledgment(
         stillConnected: { value: boolean },
-        channel: amqp.Channel,
+        originalChannel: amqp.Channel,
     ) {
-        if (!stillConnected.value || this.batches.length === 0)
+        if (this.batches.length === 0)
             return;
 
-        const firstUnprocessedIndex = this.batches.findIndex(({ state }) => state !== BatchState.Processed);
-        const processedToIndex = firstUnprocessedIndex < 0 ? this.batches.length : firstUnprocessedIndex;
-        const batchesToConfirm = this.batches.slice(0, processedToIndex);
+        if (!stillConnected.value || this.shouldAutoAck) {
+            this.batches.filter(batch =>
+                batch.state === BatchState.Processed,
+            ).forEach(batch => {
+                batch.state = BatchState.Acknowledged;
+            });
+            return;
+        }
 
         // for first X batches we can use confirmation with "up to" semantic
+        const firstUnprocessedIndex = this.batches.findIndex(
+            ({ state }) =>
+                state !== BatchState.Processed && state !== BatchState.Acknowledged,
+        );
+        const processedToIndex = firstUnprocessedIndex < 0 ? this.batches.length : firstUnprocessedIndex;
+        const batchesToConfirm = this.batches.slice(0, processedToIndex);
+        batchesToConfirm.forEach(batch => {
+            clearTimeout(batch.confirmTimer);
+            batch.confirmTimer = undefined;
+        });
         if (batchesToConfirm.length > 0) {
-            for (const batch of batchesToConfirm)
-                clearTimeout(batch.confirmTimer);
             const lastConfirmBatch = last(batchesToConfirm);
             if (!lastConfirmBatch)
                 throw this.processError('Internal Error: Last batch for confirmation not found, should never happen');
             const lastMessageOfLastConfirmBatch = last(lastConfirmBatch.messages);
             if (!lastMessageOfLastConfirmBatch)
                 throw this.processError('Internal Error: Last batch or last message for confirmation not found, should never happen');
-            if (!this.shouldAutoAck)
-                channel.ack(lastMessageOfLastConfirmBatch.rabbitMessage, true);
-            this.removeProcessedBatches(batchesToConfirm);
+            // keep await there in case API change in the future
+            await originalChannel.ack(lastMessageOfLastConfirmBatch.rabbitMessage, true);
         }
+        batchesToConfirm.forEach(batch => {
+            batch.state = BatchState.Acknowledged;
+        });
+        this.removeProcessedBatches();
 
-        // for rest wait in case the missing batch will be processed in meantime
+        // for rest wait up to maxWaitTime to process previous batches
         this.batches
             .filter(batch =>
                 batch.state === BatchState.Processed && !batch.confirmTimer,
             )
             .forEach(batch => {
-                batch.confirmTimer = setTimeout(() => {
-                    this.removeProcessedBatches(batch);
-                    if (!stillConnected.value)
+                batch.confirmTimer = setTimeout(async () => {
+                    if (!stillConnected.value) {
+                        batch.state = BatchState.Acknowledged;
                         return;
-                    if (!this.shouldAutoAck) {
-                        batch.messages.forEach(({ rabbitMessage }) =>
-                            channel.ack(rabbitMessage, false),
-                        );
                     }
+                    await Promise.all([
+                        batch.messages.map(({ rabbitMessage }) =>
+                            originalChannel.ack(rabbitMessage, false),
+                        ),
+                    ]);
+
+                    batch.state = BatchState.Acknowledged;
+                    this.removeProcessedBatches();
                 }, this.maxWaitTimeForAck);
             });
     }
