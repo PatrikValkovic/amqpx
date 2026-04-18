@@ -1,7 +1,7 @@
 import * as amqp from 'amqplib';
 import { Queue } from '../queue';
 import { Channel } from '../channel';
-import { deepMerge, last, tryCatchExpression } from '../utils';
+import { deepMerge, last } from '../utils';
 import {
     BatchConsumerCallbackFn,
     BatchConsumerOptions,
@@ -20,7 +20,7 @@ export class BatchConsumerImplementation<Message>
     private static readonly DEFAULT_BATCH_SIZE = 20;
 
     private readonly options: Required<BatchConsumerOptions<Message>>;
-    private batches: BatchRecord<Message>[] = [];
+    private batches: BatchRecord[] = [];
     private batchFillTimer: NodeJS.Timeout | undefined;
 
     constructor(
@@ -79,15 +79,6 @@ export class BatchConsumerImplementation<Message>
         }
 
         this.currentlyProcessingMessages++;
-        const { content } = msg;
-        const parsed = await tryCatchExpression(
-            () => this.options.parseMessageFn(content),
-            err => {
-                this.currentlyProcessingMessages--;
-                this.notifyMessageProcessed?.();
-                throw err;
-            },
-        );
 
         // Create new batch if necessary
         if (this.batches.length === 0 || last(this.batches)?.state !== BatchState.WaitingForData) {
@@ -101,10 +92,7 @@ export class BatchConsumerImplementation<Message>
         const lastBatch = last(this.batches);
         if (!lastBatch)
             throw this.processError('Internal error: Cannot get last batch');
-        lastBatch.messages.push({
-            message: parsed,
-            rabbitMessage: msg,
-        });
+        lastBatch.messages.push({ rabbitMessage: msg });
 
         // Last batch have enough messages, process it
         if (lastBatch.messages.length >= this.effectiveBatchSize) {
@@ -162,17 +150,24 @@ export class BatchConsumerImplementation<Message>
     private async handleBatch(
         callback: BatchConsumerCallbackFn<Message>,
         originalChannel: amqp.Channel,
-        batch: BatchRecord<Message>,
+        batch: BatchRecord,
         stillConnected: { value: boolean },
     ) {
         try {
             batch.state = BatchState.Processing;
+            const parsedMessages = await Promise.all(
+                batch.messages.map(async ({ rabbitMessage }) => ({
+                    rabbitMessage,
+                    message: await this.options.parseMessageFn(rabbitMessage.content),
+                })),
+            );
             await callback({
-                messages: batch.messages,
+                messages: parsedMessages,
                 channel: this.channel,
             });
             batch.state = BatchState.Processed;
-        } catch {
+        } catch (error) {
+            this.emit('handlingFailed', error);
             await this.handleBatchError(callback, originalChannel, batch, stillConnected);
         } finally {
             await this.planMessageAcknowledgment(stillConnected, originalChannel);
@@ -183,7 +178,7 @@ export class BatchConsumerImplementation<Message>
     private async handleBatchError(
         callback: BatchConsumerCallbackFn<Message>,
         originalChannel: amqp.Channel,
-        batch: BatchRecord<Message>,
+        batch: BatchRecord,
         stillConnected: { value: boolean },
     ) {
         batch.state = BatchState.Failed;
@@ -213,7 +208,7 @@ export class BatchConsumerImplementation<Message>
 
     private async handleFailureStrategy(
         originalChannel: amqp.Channel,
-        batch: BatchRecord<Message>,
+        batch: BatchRecord,
         stillConnected: { value: boolean },
         indexOfBatch: number,
     ) {
@@ -238,7 +233,7 @@ export class BatchConsumerImplementation<Message>
 
     private async nackMessages(
         originalChannel: amqp.Channel,
-        batch: BatchRecord<Message>,
+        batch: BatchRecord,
         indexOfBatch: number,
         requeue: boolean,
     ) {
@@ -261,12 +256,12 @@ export class BatchConsumerImplementation<Message>
 
     private async splitBatch(
         originalChannel: amqp.Channel,
-        batch: BatchRecord<Message>,
+        batch: BatchRecord,
         stillConnected: { value: boolean },
         indexOfBatch: number,
         callback: BatchConsumerCallbackFn<Message>,
     ) {
-        const splitBatches: BatchRecord<Message>[] = batch.messages.map(message => ({
+        const splitBatches: BatchRecord[] = batch.messages.map(message => ({
             state: BatchState.Processing,
             messages: [message],
         }));

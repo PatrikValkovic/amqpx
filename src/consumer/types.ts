@@ -174,9 +174,8 @@ export const DEFAULT_CONSUMER_OPTIONS = {
     channel: null,
 } as const satisfies Required<BatchConsumerOptions<unknown>> & Required<ConsumerOptions<unknown>>;
 
-export type BatchRecord<Message> = {
+export type BatchRecord = {
     messages: Array<{
-        message: Message;
         rabbitMessage: amqp.Message;
     }>;
     state: BatchState;

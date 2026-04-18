@@ -13,8 +13,7 @@ export type BatchConsumerEventMap = BaseConsumerEventMap & {
      */
     error: [error: Error];
     /**
-     * Emitted when the message handler throws an error.
-     * TODO: not yet emitted by the implementation
+     * Emitted when the message handler or message parsing throws an error.
      */
     handlingFailed: [error: unknown];
 };

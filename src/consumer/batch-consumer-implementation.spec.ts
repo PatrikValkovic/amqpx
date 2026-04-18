@@ -905,8 +905,102 @@ describe('Batch consumer implementation', () => {
         });
     });
 
-    describe('parseMessageFn', () => {
-        test('close() should resolve after parseMessageFn throws', async () => {
+    describe('parse failure', () => {
+        test('should nack batch when parse fails and failureStrategy is Reject', async () => {
+            const parseError = new Error('parse failure');
+            const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    batchFailureStrategy: BatchFailureStrategy.Reject,
+                    failureStrategy: ConsumptionFailureStrategy.Reject,
+                    parseMessageFn: () => {
+                        throw parseError;
+                    },
+                },
+            );
+
+            await consumerWithBadParser.listen(vi.fn());
+            const { rabbitMessages, consumePromise } = processGeneratedMessages(5);
+            await consumePromise;
+
+            expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[4], true, false);
+        });
+
+        test('should requeue batch when parse fails and failureStrategy is Requeue', async () => {
+            const parseError = new Error('parse failure');
+            const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    batchFailureStrategy: BatchFailureStrategy.Reject,
+                    failureStrategy: ConsumptionFailureStrategy.Requeue,
+                    parseMessageFn: () => {
+                        throw parseError;
+                    },
+                },
+            );
+
+            await consumerWithBadParser.listen(vi.fn());
+            const { rabbitMessages, consumePromise } = processGeneratedMessages(5);
+            await consumePromise;
+
+            expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[4], true, true);
+        });
+
+        test('should not ack or nack when parse fails and failureStrategy is Drop', async () => {
+            const parseError = new Error('parse failure');
+            const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    batchFailureStrategy: BatchFailureStrategy.Reject,
+                    failureStrategy: ConsumptionFailureStrategy.Drop,
+                    parseMessageFn: () => {
+                        throw parseError;
+                    },
+                },
+            );
+
+            await consumerWithBadParser.listen(vi.fn());
+            const { consumePromise } = processGeneratedMessages(5);
+            await consumePromise;
+
+            expect(channel.nativeChannel.ack).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
+        });
+
+        test('should emit handlingFailed when parse fails', async () => {
+            const parseError = new Error('parse failure');
+            const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    parseMessageFn: () => {
+                        throw parseError;
+                    },
+                },
+            );
+
+            let emittedError: unknown;
+            consumerWithBadParser.on('handlingFailed', err => {
+                emittedError = err;
+            });
+
+            await consumerWithBadParser.listen(vi.fn());
+            const { consumePromise } = processGeneratedMessages(5);
+            await consumePromise;
+
+            expect(emittedError).toBe(parseError);
+        });
+
+        test('close() should resolve after parse failure', async () => {
             const parseError = new Error('parse failure');
             const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
                 channel,
@@ -920,19 +1014,13 @@ describe('Batch consumer implementation', () => {
             );
 
             await consumerWithBadParser.listen(vi.fn());
+            const { consumePromise } = processGeneratedMessages(5);
+            await consumePromise;
 
-            const consumerHandler = channel.nativeChannel.consume.mock.lastCall![1];
-            const rabbitMessage = { content: Buffer.from('{}') };
-
-            // Delivering a message whose parsing throws should not inflate
-            // currentlyProcessingMessages permanently.
-            await expect(consumerHandler(rabbitMessage)).rejects.toThrow(parseError);
-
-            // close() must resolve without timing out
             await expect(consumerWithBadParser.close(500)).resolves.toBeUndefined();
         });
 
-        test('close() should resolve even if parsing is asynchronous', async () => {
+        test('close() should resolve after async parse failure', async () => {
             const parseError = new Error('parse failure');
             const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
                 channel,
@@ -947,14 +1035,51 @@ describe('Batch consumer implementation', () => {
             );
 
             await consumerWithBadParser.listen(vi.fn());
+            const { consumePromise } = processGeneratedMessages(5);
+            const closePromise = consumerWithBadParser.close(500);
+            await consumePromise;
+
+            await expect(closePromise).resolves.toBeUndefined();
+        });
+
+        test('should nack only failing message when split strategy and one message has bad content', async () => {
+            const consumerWithSplit = new BatchConsumerImplementation<{ value: number }>(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    batchFailureStrategy: BatchFailureStrategy.Split,
+                    failureStrategy: ConsumptionFailureStrategy.Reject,
+                },
+            );
+            const listener = vi.fn().mockImplementation(() => Promise.resolve());
+
+            await consumerWithSplit.listen(listener);
 
             const consumerHandler = channel.nativeChannel.consume.mock.lastCall![1];
-            const rabbitMessage = { content: Buffer.from('{}') };
+            const validContent = Buffer.from(JSON.stringify({ value: 1 }));
+            const invalidContent = Buffer.from('not valid json');
 
-            const consumePromise = consumerHandler(rabbitMessage);
-            await sleepPromise(50);
-            await expect(consumerWithBadParser.close(500)).resolves.toBeUndefined();
-            await expect(consumePromise).rejects.toThrow(parseError);
+            const messages = [
+                { content: invalidContent },
+                { content: validContent },
+                { content: validContent },
+                { content: validContent },
+                { content: validContent },
+            ];
+
+            await Promise.all(messages.map(msg => consumerHandler(msg)));
+
+            // Invalid message is nacked; valid singletons are each acked individually (each at index 0 when processed)
+            expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(messages[0], true, false);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(4);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(messages[1], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(messages[2], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(messages[3], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(messages[4], true);
+            // Listener is called once per valid singleton (full batch parse fails before reaching callback)
+            expect(listener).toHaveBeenCalledTimes(4);
         });
     });
 
