@@ -11,10 +11,6 @@ Aggregate findings from five independent analysis agents: code review, bug hunti
 
 ## 2. CODE QUALITY / DESIGN IMPROVEMENTS
 
-### Unbounded Recursion in `publish()` on Repeated Backpressure
-
-`src/channel/channel-implementation.ts:151–152` — After a drain event resolves, the method retries via `await this.publish(...)` (tail recursion). If backpressure recurs on the retry, all concurrent callers recurse again. Each drain cycle adds a stack frame for every waiting publisher. Under sustained backpressure with concurrent producers this will eventually overflow the call stack. Replace the tail recursion with a `while (true)` loop.
-
 ### API Consistency
 
 - **Boilerplate repeated in Exchange and Queue** — Assertion caching + channel-close reset is identical in both. Extract into a shared `AssertableResource` base or composition class.

@@ -107,50 +107,49 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
 
     async publish(exchange: string, routingKey: string, content: Buffer, optionsArgs: ChannelPublishOptions): Promise<void> {
         const { drainTimeout, retryStrategy = DEFAULT_RETRY_STRATEGY, ...options } = optionsArgs;
-        const native = await this.native();
 
-        if (this.drainPromise)
-            await this.drainPromise;
+        while (true) {
+            const native = await this.native();
+            if (this.drainPromise)
+                await this.drainPromise;
 
-        let publishResult: boolean;
-        if (!this.wrapper.isConfirmed) {
-            const channel = native as amqp.Channel;
-            publishResult = channel.publish(exchange, routingKey, content, options);
-        } else {
-            const channel = native as amqp.ConfirmChannel;
-            publishResult = await retryLoop(
-                retryStrategy,
-                () => new Promise<boolean>((resolve, reject) => {
-                    const status = channel.publish(exchange, routingKey, content, options, err => {
-                        err ? reject(err) : resolve(status);
-                    });
-                }),
-                err => err.message === 'message nacked',
-            );
+            let publishResult: boolean;
+            if (!this.wrapper.isConfirmed) {
+                const channel = native as amqp.Channel;
+                publishResult = channel.publish(exchange, routingKey, content, options);
+            } else {
+                const channel = native as amqp.ConfirmChannel;
+                publishResult = await retryLoop(
+                    retryStrategy,
+                    () => new Promise<boolean>((resolve, reject) => {
+                        const status = channel.publish(exchange, routingKey, content, options, err => {
+                            err ? reject(err) : resolve(status);
+                        });
+                    }),
+                    err => err.message === 'message nacked',
+                );
+            }
+            if (publishResult)
+                return;
+
+            if (!this.drainPromise) {
+                this.drainPromise = new Promise<void>((resolve, reject) => {
+                    let timeoutHandler: NodeJS.Timeout;
+                    const drainHandler = () => {
+                        clearTimeout(timeoutHandler);
+                        this.drainPromise = null;
+                        resolve();
+                    };
+                    this.once('drain', drainHandler);
+                    timeoutHandler = setTimeout(async () => {
+                        this.removeListener('drain', drainHandler);
+                        this.drainPromise = null;
+                        reject(new DrainError('Rabbit drain timeout'));
+                        await native.close();
+                    }, drainTimeout);
+                });
+            }
         }
-        if (publishResult)
-            return;
-
-        if (!this.drainPromise) {
-            this.drainPromise = new Promise<void>((resolve, reject) => {
-                let timeoutHandler: NodeJS.Timeout;
-                const drainHandler = () => {
-                    clearTimeout(timeoutHandler);
-                    this.drainPromise = null;
-                    resolve();
-                };
-                this.once('drain', drainHandler);
-                timeoutHandler = setTimeout(async () => {
-                    this.removeListener('drain', drainHandler);
-                    this.drainPromise = null;
-                    reject(new DrainError('Rabbit drain timeout'));
-                    await native.close();
-                }, drainTimeout);
-            });
-        }
-
-        await this.drainPromise;
-        await this.publish(exchange, routingKey, content, optionsArgs);
     }
 
     createProducerForQueue<T>(queue: Queue, options: ProducerOptions<T> = {}): Promise<Producer<T>> {
