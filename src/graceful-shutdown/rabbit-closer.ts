@@ -20,16 +20,19 @@ export class RabbitCloser {
         await Promise.all(
             this.producers.map(async producer => {
                 await producer.close();
-                await producer.getChannel().close();
             }),
         );
         debug('shutdown-consumers-started');
         await Promise.all(
             this.consumers.map(async consumer => {
                 await consumer.close();
-                await consumer.channel.close();
             }),
         );
+        debug('shutdown-channels-started');
+        await Promise.all([
+            ...this.producers.map(producer => producer.channel.close()),
+            ...this.consumers.map(consumer => consumer.channel.close()),
+        ]);
         debug('shutdown-connections-started');
         await Promise.all(
             this.connections.map(connection => connection.close()),

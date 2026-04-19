@@ -6,6 +6,7 @@ module.exports = [
         rules: {
             'no-await-in-loop': 'off',
             '@typescript-eslint/unified-signatures': 'off',
+            'prefer-named-capture-group': 'off',
         },
     },
     {

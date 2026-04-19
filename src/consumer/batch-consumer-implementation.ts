@@ -46,6 +46,7 @@ export class BatchConsumerImplementation<Message>
                 this.channel.native(),
                 this.queue.name(),
             ]);
+            this.channel.on('close', this.channelCloseCallback);
 
             debug('start-listening queue=%s prefetch=%d ack=%s', queueName, this.options.prefetch, !this.shouldAutoAck);
             await channel.prefetch(this.options.prefetch);
@@ -143,7 +144,7 @@ export class BatchConsumerImplementation<Message>
     }
 
     private get shouldAutoAck() {
-        return this.options.failureStrategy === ConsumptionFailureStrategy.Drop;
+        return this.options.failureStrategy === ConsumptionFailureStrategy.Drop && this.options.prefetch <= 0;
     }
 
     private get maxWaitTimeForAck() {
@@ -170,6 +171,12 @@ export class BatchConsumerImplementation<Message>
         // guard in case processing is called twice on the same batch
         if (batch.state !== BatchState.WaitingForData)
             return;
+
+        if (!stillConnected.value) {
+            debug('batch-acknowledged queue=%s reason=%s', queueName, 'disconnected');
+            batch.state = BatchState.Acknowledged;
+            return;
+        }
 
         try {
             debug('processing-batch-started queue=%s batch-size=%d', queueName, batch.messages.length);

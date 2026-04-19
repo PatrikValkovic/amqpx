@@ -36,5 +36,5 @@ export interface Producer<T, WholeMessage = T> extends EventEmitter<ProducerEven
 
     publish(message: T, routingKey?: RoutingKeyGenerator<T>, options?: ProducerPublishOptions): Promise<WholeMessage>;
 
-    getChannel(): Channel;
+    get channel(): Channel;
 }

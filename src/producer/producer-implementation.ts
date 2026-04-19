@@ -22,7 +22,7 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
     private closed = false;
 
     constructor(
-        private readonly channel: Channel,
+        public readonly channel: Channel,
         private readonly exchange: Exchange,
         options: ProducerOptions<T> = {},
     ) {
@@ -43,6 +43,7 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
             if (deleted > 0)
                 debug('deleted-in-flight deleted=%d remaining=%d', deleted, this.inFlight.size);
         }, Math.max(100, this.options.errorWindow));
+        this.interval.unref();
     }
 
     async close(): Promise<void> {
@@ -114,9 +115,5 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
         this.emit(ProducerEvents.afterSend, message, buffer);
 
         return message;
-    }
-
-    getChannel() {
-        return this.channel;
     }
 }

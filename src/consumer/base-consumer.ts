@@ -30,27 +30,30 @@ export abstract class BaseConsumer<
     protected consumer: Promise<ConsumerWrapper<CallbackFn>> | null = null;
     protected currentlyProcessingMessages = 0;
     protected notifyMessageProcessed: (() => void) | undefined = undefined;
+    private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
-    constructor(
+    protected constructor(
         public readonly channel: Channel,
         public readonly queue: Queue,
     ) {
         super();
-        this.channel.on('close', this.channelCloseCallback);
     }
 
-    private readonly channelCloseCallback = () => {
+    protected readonly channelCloseCallback = () => {
         debug(`native-close reconnect-in=%dms`, RECONNECT_TIMEOUT);
-        setTimeout(async () => {
+        this.reconnectTimer = setTimeout(async () => {
+            this.reconnectTimer = undefined;
             if (this.consumer) {
                 debug(`reconnecting`);
-                const { callback } = await this.consumer;
-                this.consumer = null;
-                this.listen(callback).catch(err => {
+                try {
+                    const { callback } = await this.consumer;
+                    this.consumer = null;
+                    await this.listen(callback);
+                } catch (err) {
                     debug(`reconnect-error error=%s`, errToMessage(err));
                     (this as EventEmitter<BaseConsumerEventMap>).emit('reconnectError', err);
                     void this.close();
-                });
+                }
             }
         }, RECONNECT_TIMEOUT);
     };
@@ -58,6 +61,10 @@ export abstract class BaseConsumer<
     abstract listen(callback: CallbackFn): Promise<this>;
 
     async close(timeout = 30000): Promise<void> {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = undefined;
+        this.channel.off('close', this.channelCloseCallback);
+
         if (this.consumer) {
             debug(`closing timeout=%dms`, timeout);
             const consumer = await this.consumer;
@@ -86,6 +93,7 @@ export abstract class BaseConsumer<
                 debug('closed');
                 (this as EventEmitter<BaseConsumerEventMap>).emit('close');
                 this.consumer = null;
+                this.notifyMessageProcessed = undefined;
             }
         }
     }

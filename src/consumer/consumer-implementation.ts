@@ -32,6 +32,7 @@ export class ConsumerImplementation<Message>
                 this.channel.native(),
                 this.queue.name(),
             ]);
+            this.channel.on('close', this.channelCloseCallback);
 
             const shouldAck = this.shouldAcknowledge();
             debug('start-listening queue=%s prefetch=%d ack=%s', queueName, this.options.prefetch, shouldAck);

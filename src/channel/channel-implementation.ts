@@ -83,7 +83,7 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
                     channel: await this.wrapper.channel,
                 };
                 if (!wrapper.channel)
-                    throw new Error('Channel is empty but app attempted to close it, if you see this please report it');
+                    throw new Error('Internal error: channel is empty but app attempted to close it');
                 if (wrapper.isConfirmed)
                     await swallowError((wrapper.channel as ConfirmChannel).waitForConfirms());
                 await swallowError(wrapper.channel.close?.());
@@ -162,12 +162,13 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
                         resolve();
                     };
                     this.once('drain', drainHandler);
+                    this.once('close', drainHandler);
                     timeoutHandler = setTimeout(async () => {
                         this.removeListener('drain', drainHandler);
                         this.drainPromise = null;
                         debug('drain-timeout exchange=%s routing-key=%s timeout=%dms', exchange, routingKey, drainTimeout);
                         reject(new DrainError('Rabbit drain timeout'));
-                        await native.close();
+                        void native.close();
                     }, drainTimeout);
                 });
             }
