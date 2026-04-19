@@ -77,16 +77,18 @@ export abstract class BaseConsumer<
                 this.notifyMessageProcessed = () => {
                     if (this.currentlyProcessingMessages === 0)
                         resolve();
-
                 };
                 this.notifyMessageProcessed();
             });
 
+
             try {
+                const abort = new AbortController();
                 await Promise.race([
-                    waitForAllMessagesPromise,
+                    waitForAllMessagesPromise.then(() => abort.abort()),
                     sleepPromise(timeout).then(() => {
-                        throw new Error('Consumer close timeout');
+                        if (!abort.signal.aborted)
+                            throw new Error('Consumer close timeout');
                     }),
                 ]);
             } finally {
