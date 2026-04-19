@@ -153,6 +153,10 @@ export class BatchConsumerImplementation<Message>
         batch: BatchRecord,
         stillConnected: { value: boolean },
     ) {
+        // guard in case processing is called twice on the same batch
+        if (batch.state !== BatchState.WaitingForData)
+            return;
+
         try {
             batch.state = BatchState.Processing;
             const parsedMessages = await Promise.all(
@@ -257,7 +261,7 @@ export class BatchConsumerImplementation<Message>
         callback: BatchConsumerCallbackFn<Message>,
     ) {
         const splitBatches: BatchRecord[] = batch.messages.map(message => ({
-            state: BatchState.Processing,
+            state: BatchState.WaitingForData,
             messages: [message],
         }));
         this.batches.splice(indexOfBatch, 1, ...splitBatches);

@@ -142,6 +142,26 @@ describe('Batch consumer implementation', () => {
             });
         });
 
+        test('should process batch exactly once when zero-delay timer fires concurrently with batch fill', async () => {
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 4,
+                    maxWaitTimeForBatch: 0,
+                },
+            );
+            const listener = vi.fn().mockResolvedValue(undefined);
+
+            await consumer.listen(listener);
+            const { rabbitMessages, consumePromise } = processGeneratedMessages(4);
+            await consumePromise;
+
+            expect(listener).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[3], true);
+        });
+
         test('should process partial batch', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,

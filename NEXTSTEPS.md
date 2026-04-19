@@ -8,14 +8,8 @@ Aggregate findings from five independent analysis agents: code review, bug hunti
 
 Ordered roughly by severity.
 
-**B3. `clearTimeout` cannot cancel a timer callback that has already been queued**
-`src/consumer/batch-consumer-implementation.ts:98–121` — When the newest message fills the batch to `effectiveBatchSize`, `messageReceiver` calls `clearTimeout(this.batchFillTimer)` and then `handleBatch(lastBatch)`. If the timer already fired in the same event-loop tick (easy when `maxWaitTimeForBatch` is 0, or when async work under the receiver stalled past the delay), `clearTimeout` is a no-op. The queued timer callback and the size-path receiver both invoke `handleBatch` on the same batch, re-running the user callback and corrupting `batch.state`. The timer callback then triggers B2 in its `finally`.
-
-**B4. `batchFillTimer` closure captures a `lastBatch` that may be retired before the timer fires**
-`src/consumer/batch-consumer-implementation.ts:92,112–121` — The timer's arrow function closes over the `lastBatch` local of the receiver invocation that installed it. Later receivers may push to that same batch, hit the size threshold, move it through `Processing → Processed → Acknowledged`, and splice it out of `this.batches` — all while `clearTimeout` fails to cancel the already-queued timer (B3). The timer then runs `handleBatch` on a retired batch with no state guard, re-invoking the user callback and manipulating a batch that no longer belongs to the consumer.
-
 **B5. `splitBatch` runs sub-batches in parallel, multiplying the ack race**
-`src/consumer/batch-consumer-implementation.ts:257–275` — `Promise.all(splitBatches.map(batch => this.handleBatch(...)))` deliberately runs every sub-batch's `handleBatch` concurrently. Each sub-batch's `finally` calls `planMessageAcknowledgment`, so a single failed batch of N messages produces up to N overlapping invocations that all race per B2. If some sub-batches succeed and others fail, the failing sub-batches' `handleBatchError → nackMessages` path interleaves with the successful sub-batches' `planMessageAcknowledgment → ack` path, and the resulting ack/nack sequence depends purely on scheduler ordering.
+`src/consumer/batch-consumer-implementation.ts:257–275` — `Promise.all(splitBatches.map(batch => this.handleBatch(...)))` deliberately runs every sub-batch's `handleBatch` concurrently. Each sub-batch's `finally` calls `planMessageAcknowledgment`, so a single failed batch of N messages produces up to N overlapping invocations that all race. If some sub-batches succeed and others fail, the failing sub-batches' `handleBatchError → nackMessages` path interleaves with the successful sub-batches' `planMessageAcknowledgment → ack` path, and the resulting ack/nack sequence depends purely on scheduler ordering.
 
 ---
 
