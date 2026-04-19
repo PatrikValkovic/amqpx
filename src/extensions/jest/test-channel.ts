@@ -75,13 +75,13 @@ export class TestChannel extends EventEmitter implements Channel {
     private _drainPending = false;
     private _drainResolvers: Array<() => void> = [];
 
-    publish = jest.fn().mockImplementation((): Promise<void> => {
+    publish = jest.fn().mockImplementation((): Promise<boolean> => {
         if (this._drainPending) {
-            return new Promise<void>(resolve => {
-                this._drainResolvers.push(resolve);
+            return new Promise<boolean>(resolve => {
+                this._drainResolvers.push(() => resolve(false));
             });
         }
-        return Promise.resolve();
+        return Promise.resolve(false);
     });
 
     checkQueue = jest.fn().mockImplementation((queue: string) => Promise.resolve({

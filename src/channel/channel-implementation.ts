@@ -117,7 +117,7 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
         throw new Error(`Channel not created`);
     }
 
-    async publish(exchange: string, routingKey: string, content: Buffer, optionsArgs: ChannelPublishOptions): Promise<void> {
+    async publish(exchange: string, routingKey: string, content: Buffer, optionsArgs: ChannelPublishOptions): Promise<boolean> {
         debug('publish exchange=%s routing-key=%s confirmed=%s', exchange, routingKey, this.wrapper.isConfirmed);
         const { drainTimeout, retryStrategy = DEFAULT_RETRY_STRATEGY, ...options } = optionsArgs;
 
@@ -147,7 +147,7 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
             }
             if (publishResult) {
                 debug('publish-success exchange=%s routing-key=%s', exchange, routingKey);
-                return;
+                return this.wrapper.isConfirmed;
             }
 
             if (!this.drainPromise) {

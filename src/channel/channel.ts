@@ -82,8 +82,9 @@ export interface Channel extends EventEmitter<ChannelEventMap> {
      * @param routingKey - Routing key for the message.
      * @param content - Serialized message body.
      * @param options - Publish options including drain timeout and retry strategy.
+     * @returns `true` if the broker confirmed receipt (confirm channel), `false` if fire-and-forget (non-confirm channel).
      */
-    publish(exchange: string, routingKey: string, content: Buffer, options: ChannelPublishOptions): Promise<void>;
+    publish(exchange: string, routingKey: string, content: Buffer, options: ChannelPublishOptions): Promise<boolean>;
 
     /**
      * Create a producer that publishes directly to a queue using this channel.

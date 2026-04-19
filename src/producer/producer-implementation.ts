@@ -18,7 +18,7 @@ const debug = debuglog(`${LIB_NAME}:publish`);
 export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>> implements Producer<T> {
     private readonly options: Required<ProducerOptions<T>>;
     private readonly inFlight = new Set<InFlightEntry<T>>();
-    private readonly pendingPublishes = new Set<Promise<void>>();
+    private readonly pendingPublishes = new Set<Promise<boolean>>();
     private readonly interval: ReturnType<typeof setInterval>;
     private closed = false;
 
@@ -111,15 +111,18 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
         } finally {
             this.pendingPublishes.delete(publishPromise);
         }
+        const isConfirmed = await publishPromise;
         debug('published exchange=%s routing-key=%s', exchangeName, actualKey);
 
-        // Global interval will remove this entry once the window expires.
-        this.inFlight.add({
-            message,
-            routingKey,
-            options,
-            expiresAt: performance.now() + this.options.errorWindow,
-        });
+        if (!isConfirmed) {
+            // Global interval will remove this entry once the window expires.
+            this.inFlight.add({
+                message,
+                routingKey,
+                options,
+                expiresAt: performance.now() + this.options.errorWindow,
+            });
+        }
 
         this.emit(ProducerEvents.afterSend, message, buffer);
 
