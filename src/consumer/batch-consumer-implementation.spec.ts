@@ -1083,6 +1083,37 @@ describe('Batch consumer implementation', () => {
         });
     });
 
+    describe('acknowledgment', () => {
+        describe('concurrent batches', () => {
+            test('should not ack the same message twice when batches complete concurrently', async () => {
+                const consumer = new BatchConsumerImplementation(
+                    channel,
+                    new TestQueue(),
+                    {
+                        batchSize: 4,
+                        batchFailureStrategy: BatchFailureStrategy.Split,
+                        failureStrategy: ConsumptionFailureStrategy.Reject,
+                        maxWaitTimeForAck: 0,
+                    },
+                );
+
+                const listener = vi.fn()
+                    .mockImplementationOnce(() => Promise.reject(new Error('trigger split')))
+                    .mockResolvedValue(undefined);
+
+                await consumer.listen(listener);
+                const { rabbitMessages, consumePromise } = processGeneratedMessages(4);
+                await consumePromise;
+
+                expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(2);
+                expect(channel.nativeChannel.ack.mock.calls).toEqual([
+                    [rabbitMessages[0], true],
+                    [rabbitMessages[3], true],
+                ]);
+            });
+        });
+    });
+
     test('should not allow split batch failure strategy with batch size of 1', () => {
         expect(() => new BatchConsumerImplementation(
             channel,

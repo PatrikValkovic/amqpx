@@ -171,7 +171,7 @@ export class BatchConsumerImplementation<Message>
             await this.handleBatchError(callback, originalChannel, batch, stillConnected);
         } finally {
             await this.planMessageAcknowledgment(stillConnected, originalChannel);
-            this.removeProcessedBatches();
+            this.removeProcessedBatches(stillConnected);
         }
     }
 
@@ -185,11 +185,6 @@ export class BatchConsumerImplementation<Message>
 
         if (!stillConnected.value) {
             batch.state = BatchState.Acknowledged;
-            this.batches.filter(batch =>
-                batch.state === BatchState.Processed,
-            ).forEach(batch => {
-                batch.state = BatchState.Acknowledged;
-            });
             return;
         }
 
@@ -274,7 +269,16 @@ export class BatchConsumerImplementation<Message>
         )));
     }
 
-    private removeProcessedBatches() {
+    private removeProcessedBatches(stillConnected: { value: boolean }) {
+        if (!stillConnected.value || this.shouldAutoAck) {
+            this.batches
+                .filter(batch =>
+                    batch.state === BatchState.Processed || batch.state === BatchState.Acknowledging,
+                ).forEach(batch => {
+                    batch.state = BatchState.Acknowledged;
+                });
+        }
+
         const indicesOfBatchesToRemove = this.batches
             .flatMap((b, i) => {
                 if (b.state === BatchState.Acknowledged)
@@ -304,60 +308,60 @@ export class BatchConsumerImplementation<Message>
         if (this.batches.length === 0)
             return;
 
-        if (!stillConnected.value || this.shouldAutoAck) {
-            this.batches.filter(batch =>
-                batch.state === BatchState.Processed,
-            ).forEach(batch => {
-                batch.state = BatchState.Acknowledged;
-            });
+        if (!stillConnected.value || this.shouldAutoAck)
             return;
-        }
 
         // for first X batches we can use confirmation with "up to" semantic
         const firstUnprocessedIndex = this.batches.findIndex(
             ({ state }) =>
-                state !== BatchState.Processed && state !== BatchState.Acknowledged,
+                [BatchState.WaitingForData, BatchState.Processing, BatchState.Failed].includes(state),
         );
         const processedToIndex = firstUnprocessedIndex < 0 ? this.batches.length : firstUnprocessedIndex;
+        // batches only in states Processed, Acknowledging, and Acknowledged
         const batchesToConfirm = this.batches.slice(0, processedToIndex);
         batchesToConfirm.forEach(batch => {
             clearTimeout(batch.confirmTimer);
             batch.confirmTimer = undefined;
         });
-        if (batchesToConfirm.length > 0) {
+
+        if (batchesToConfirm.length > 0 && last(batchesToConfirm)?.state === BatchState.Processed) {
             const lastConfirmBatch = last(batchesToConfirm);
             if (!lastConfirmBatch)
                 throw this.processError('Internal Error: Last batch for confirmation not found');
             const lastMessageOfLastConfirmBatch = last(lastConfirmBatch.messages);
             if (!lastMessageOfLastConfirmBatch)
                 throw this.processError('Internal Error: Last batch or last message for confirmation not found');
+            batchesToConfirm.forEach(batch => {
+                if (batch.state === BatchState.Processed)
+                    batch.state = BatchState.Acknowledging;
+            });
             // keep await there in case API change in the future
             await originalChannel.ack(lastMessageOfLastConfirmBatch.rabbitMessage, true);
+            batchesToConfirm.forEach(batch => {
+                batch.state = BatchState.Acknowledged;
+            });
         }
-        batchesToConfirm.forEach(batch => {
-            batch.state = BatchState.Acknowledged;
-        });
-        this.removeProcessedBatches();
 
-        // for rest wait up to maxWaitTime to process previous batches
+        // No bulk-ack possible (blocking batch before them): install confirmTimers for
+        // Processed batches that are waiting on an earlier unfinished batch.
         this.batches
             .filter(batch =>
                 batch.state === BatchState.Processed && !batch.confirmTimer,
             )
             .forEach(batch => {
                 batch.confirmTimer = setTimeout(async () => {
-                    if (!stillConnected.value) {
+                    if (!stillConnected.value)
                         batch.state = BatchState.Acknowledged;
+                    if (batch.state !== BatchState.Processed)
                         return;
-                    }
+                    batch.state = BatchState.Acknowledging;
                     await Promise.all(
                         batch.messages.map(({ rabbitMessage }) =>
                             originalChannel.ack(rabbitMessage, false),
                         ),
                     );
-
                     batch.state = BatchState.Acknowledged;
-                    this.removeProcessedBatches();
+                    this.removeProcessedBatches(stillConnected);
                 }, this.maxWaitTimeForAck);
             });
     }

@@ -32,7 +32,7 @@ export class ConsumerImplementation<Message>
 
             await channel.prefetch(this.options.prefetch);
 
-            // this must be object, so it is passed down as reference
+            // this must be an object, so it is passed down as reference
             const channelStatus = {
                 isConnected: true,
             };

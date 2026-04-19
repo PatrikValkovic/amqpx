@@ -44,8 +44,9 @@ export enum BatchFailureStrategy  {
 export enum BatchState {
     WaitingForData = 'WaitingForData',
     Processing = 'Processing',
-    Processed = 'Processed',
     Failed = 'Failed',
+    Processed = 'Processed',
+    Acknowledging = 'Acknowledging',
     Acknowledged = 'Acknowledged',
 }
 
