@@ -8,9 +8,6 @@ Aggregate findings from five independent analysis agents: code review, bug hunti
 
 Ordered roughly by severity.
 
-**B2. Concurrent `planMessageAcknowledgment` calls double-ack with `multiple=true`**
-`src/consumer/batch-consumer-implementation.ts:300–363` — Two batches finishing concurrently (sub-batches of a `splitBatch`, or a `confirmTimer` firing while another batch's `handleBatch` also completes) both enter `planMessageAcknowledgment`. Both compute `batchesToConfirm` before either marks its batches `Acknowledged`, so both issue `channel.ack(lastMessage, true)` across an overlapping delivery-tag window. The second ack re-acks already-confirmed tags; amqplib raises PRECONDITION_FAILED and closes the channel.
-
 **B3. `clearTimeout` cannot cancel a timer callback that has already been queued**
 `src/consumer/batch-consumer-implementation.ts:98–121` — When the newest message fills the batch to `effectiveBatchSize`, `messageReceiver` calls `clearTimeout(this.batchFillTimer)` and then `handleBatch(lastBatch)`. If the timer already fired in the same event-loop tick (easy when `maxWaitTimeForBatch` is 0, or when async work under the receiver stalled past the delay), `clearTimeout` is a no-op. The queued timer callback and the size-path receiver both invoke `handleBatch` on the same batch, re-running the user callback and corrupting `batch.state`. The timer callback then triggers B2 in its `finally`.
 
@@ -19,11 +16,6 @@ Ordered roughly by severity.
 
 **B5. `splitBatch` runs sub-batches in parallel, multiplying the ack race**
 `src/consumer/batch-consumer-implementation.ts:257–275` — `Promise.all(splitBatches.map(batch => this.handleBatch(...)))` deliberately runs every sub-batch's `handleBatch` concurrently. Each sub-batch's `finally` calls `planMessageAcknowledgment`, so a single failed batch of N messages produces up to N overlapping invocations that all race per B2. If some sub-batches succeed and others fail, the failing sub-batches' `handleBatchError → nackMessages` path interleaves with the successful sub-batches' `planMessageAcknowledgment → ack` path, and the resulting ack/nack sequence depends purely on scheduler ordering.
-
-**B6. `confirmTimer` callback races against a later `planMessageAcknowledgment` on the same messages**
-`src/consumer/batch-consumer-implementation.ts:342–362` — A `confirmTimer` is attached to every `Processed` batch blocked behind an earlier unprocessed batch. When the earlier batch eventually completes, a fresh `planMessageAcknowledgment` call sweeps forward, calls `clearTimeout(batch.confirmTimer)`, and issues `ack(..., multiple=true)` across the whole block. But if the timer has already fired and its callback is mid-`await Promise.all(channel.ack(msg, false))`, `clearTimeout` is a no-op; both ack flows are in flight simultaneously against the same delivery tags — a per-message ack plus a `multiple=true` ack that covers it, or the reverse — either of which amqplib rejects as a protocol error.
-
-
 
 ---
 

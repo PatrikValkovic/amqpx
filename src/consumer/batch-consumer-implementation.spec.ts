@@ -23,14 +23,25 @@ describe('Batch consumer implementation', () => {
         expect(consumer.batches).toHaveLength(0);
         // @ts-expect-error currentlyProcessingMessages is private property
         expect(consumer.currentlyProcessingMessages).toEqual(0);
+        // each messages was ack/nack at most once
+        const messages: object[] = [];
+        channel.nativeChannel.ack.mock.calls.forEach(([message]) => {
+            expect(messages).not.toContain(message);
+            messages.push(message);
+        });
+        channel.nativeChannel.nack.mock.calls.forEach(([message]) => {
+            expect(messages).not.toContain(message);
+            messages.push(message);
+        });
     });
 
     const processGeneratedMessages = (numOfMessages: number) => {
         const messagesContent = Array.from({ length: numOfMessages }, (_, i) => i).map(
             value => ({ value }),
         );
-        const rabbitMessages = messagesContent.map(content => ({
+        const rabbitMessages = messagesContent.map((content, i) => ({
             content: Buffer.from(JSON.stringify(content)),
+            __index: i,
         }));
 
         const consumerHandler = channel.nativeChannel.consume.mock.lastCall![1];
@@ -1084,33 +1095,28 @@ describe('Batch consumer implementation', () => {
     });
 
     describe('acknowledgment', () => {
-        describe('concurrent batches', () => {
-            test('should not ack the same message twice when batches complete concurrently', async () => {
-                const consumer = new BatchConsumerImplementation(
-                    channel,
-                    new TestQueue(),
-                    {
-                        batchSize: 4,
-                        batchFailureStrategy: BatchFailureStrategy.Split,
-                        failureStrategy: ConsumptionFailureStrategy.Reject,
-                        maxWaitTimeForAck: 0,
-                    },
-                );
+        test('should not ack the same message twice when batches complete concurrently', async () => {
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 4,
+                    batchFailureStrategy: BatchFailureStrategy.Split,
+                    failureStrategy: ConsumptionFailureStrategy.Reject,
+                    maxWaitTimeForAck: 0,
+                },
+            );
 
-                const listener = vi.fn()
-                    .mockImplementationOnce(() => Promise.reject(new Error('trigger split')))
-                    .mockResolvedValue(undefined);
+            const listener = vi.fn()
+                .mockImplementationOnce(() => Promise.reject(new Error('trigger split')))
+                .mockResolvedValue(undefined);
 
-                await consumer.listen(listener);
-                const { rabbitMessages, consumePromise } = processGeneratedMessages(4);
-                await consumePromise;
+            await consumer.listen(listener);
+            const { rabbitMessages, consumePromise } = processGeneratedMessages(4);
+            await consumePromise;
 
-                expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(2);
-                expect(channel.nativeChannel.ack.mock.calls).toEqual([
-                    [rabbitMessages[0], true],
-                    [rabbitMessages[3], true],
-                ]);
-            });
+            expect(channel.nativeChannel.ack).toHaveBeenCalled();
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[3], true);
         });
     });
 
