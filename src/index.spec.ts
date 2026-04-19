@@ -1,5 +1,5 @@
 describe('Index test', () => {
-    test('should import index', async () => {
+    it('should import index', async () => {
         await import('./index');
     });
 });

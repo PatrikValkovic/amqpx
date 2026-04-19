@@ -55,7 +55,7 @@ describe('Batch consumer implementation', () => {
     };
 
     describe('consuming', () => {
-        test('should process batch', async () => {
+        it('should process batch', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -85,7 +85,7 @@ describe('Batch consumer implementation', () => {
             expect(listener).toHaveBeenCalledTimes(1);
         });
 
-        test('should set batch size based on prefetch when batch size is not provided', async () => {
+        it('should set batch size based on prefetch when batch size is not provided', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -114,7 +114,7 @@ describe('Batch consumer implementation', () => {
             });
         });
 
-        test('should set batch size to default 20 when batch size nor prefetch is specified', async () => {
+        it('should set batch size to default 20 when batch size nor prefetch is specified', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -142,7 +142,7 @@ describe('Batch consumer implementation', () => {
             });
         });
 
-        test('should process batch exactly once when zero-delay timer fires concurrently with batch fill', async () => {
+        it('should process batch exactly once when zero-delay timer fires concurrently with batch fill', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -162,7 +162,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[3], true);
         });
 
-        test('should process partial batch', async () => {
+        it('should process partial batch', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -252,7 +252,7 @@ describe('Batch consumer implementation', () => {
             ]);
         });
 
-        test('should wait for batch but send confirmation anyway when previous batch is not processed within specified time', async () => {
+        it('should wait for batch but send confirmation anyway when previous batch is not processed within specified time', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -303,7 +303,7 @@ describe('Batch consumer implementation', () => {
             ]);
         });
 
-        test('should wait for the delayed batch and send single confirmation message', async () => {
+        it('should wait for the delayed batch and send single confirmation message', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -351,7 +351,7 @@ describe('Batch consumer implementation', () => {
     });
 
     describe('processing failure with rejection batch failure strategy', () => {
-        test('should reject messages', async () => {
+        it('should reject messages', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -373,7 +373,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[4], true, false);
         });
 
-        test('should reject the messages individually when first batch is delayed', async () => {
+        it('should reject the messages individually when first batch is delayed', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -400,7 +400,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[9], false, false);
         });
 
-        test('should requeue the messages', async () => {
+        it('should requeue the messages', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -422,7 +422,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[4], true, true);
         });
 
-        test('should requeue the messages individually when first batch is delayed', async () => {
+        it('should requeue the messages individually when first batch is delayed', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -448,7 +448,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[9], false, true);
         });
 
-        test('should have auto acknowledge on when failure strategy is drop', async () => {
+        it('should have auto acknowledge on when failure strategy is drop', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -471,7 +471,7 @@ describe('Batch consumer implementation', () => {
     });
 
     describe('processing failure with split batch failure strategy', () => {
-        test('should split batch and process messages one at a time', async () => {
+        it('should split batch and process messages one at a time', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -498,7 +498,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
         });
 
-        test('after split it should respect acknowledgement delay', async () => {
+        it('after split it should respect acknowledgement delay', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -523,7 +523,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
         });
 
-        test('should reprocess messages even when failure strategy is drop', async () => {
+        it('should reprocess messages even when failure strategy is drop', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -545,7 +545,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(0);
         });
 
-        test('should handle each message individually for reject strategy', async () => {
+        it('should handle each message individually for reject strategy', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -586,7 +586,7 @@ describe('Batch consumer implementation', () => {
             expect(nackCallOrder[1]).toBeLessThan(ackCallOrder[0] as number);
         });
 
-        test('should handle each message individually for requeue strategy', async () => {
+        it('should handle each message individually for requeue strategy', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -629,7 +629,7 @@ describe('Batch consumer implementation', () => {
     });
 
     describe('failure strategy has invalid input', () => {
-        test('should throw error when invalid batch failure strategy is used', async () => {
+        it('should throw error when invalid batch failure strategy is used', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -656,7 +656,7 @@ describe('Batch consumer implementation', () => {
             expect(errorMsg?.message).toEqual('Not supported batch failure strategy: invalid');
         });
 
-        test('should throw error when invalid failure strategy is used with reject batch failure', async () => {
+        it('should throw error when invalid failure strategy is used with reject batch failure', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -683,7 +683,7 @@ describe('Batch consumer implementation', () => {
             expect(errorMsg?.message).toEqual('Not supported failure strategy: invalid');
         });
 
-        test('should throw error when invalid failure strategy is used with split batch failure', async () => {
+        it('should throw error when invalid failure strategy is used with split batch failure', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -712,7 +712,7 @@ describe('Batch consumer implementation', () => {
     });
 
     describe('channel close', () => {
-        test('should not send ack nor nock when processing is successful', async () => {
+        it('should not send ack nor nock when processing is successful', async () => {
             const listener = vi.fn().mockImplementation(
                 () => sleepPromise(500),
             );
@@ -729,7 +729,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(0);
         });
 
-        test('should not send ack nor nock when processing is not successful', async () => {
+        it('should not send ack nor nock when processing is not successful', async () => {
             const listener = vi.fn().mockImplementation(async () => {
                 await sleepPromise(500);
                 throw new Error('Testing error');
@@ -747,7 +747,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(0);
         });
 
-        test('should not send ack nor nock when batch is split', async () => {
+        it('should not send ack nor nock when batch is split', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -774,7 +774,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(0);
         });
 
-        test('should not send ack nor nock when batch is split and split fails', async () => {
+        it('should not send ack nor nock when batch is split and split fails', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -803,7 +803,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(0);
         });
 
-        test('should try to reconnect after channel close', async () => {
+        it('should try to reconnect after channel close', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -825,7 +825,7 @@ describe('Batch consumer implementation', () => {
     });
 
     describe('consumer close', () => {
-        test('should wait for processing all batches', async () => {
+        it('should wait for processing all batches', async () => {
             const listener = vi.fn().mockImplementation(
                 () => sleepPromise(500),
             );
@@ -848,7 +848,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.ack).toHaveBeenCalled();
         });
 
-        test('should wait for reject of batches', async () => {
+        it('should wait for reject of batches', async () => {
             const listener = vi.fn()
                 .mockImplementation(async () => {
                     await sleepPromise(500);
@@ -865,7 +865,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalled();
         });
 
-        test('should wait for ack of messages after split', async () => {
+        it('should wait for ack of messages after split', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -893,7 +893,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.ack).toHaveBeenCalled();
         });
 
-        test('should wait for nack of messages after split', async () => {
+        it('should wait for nack of messages after split', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -918,7 +918,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalled();
         });
 
-        test('should handle close timeout', async () => {
+        it('should handle close timeout', async () => {
             const listener = vi.fn()
                 .mockImplementation(async () => {
                     await sleepPromise(1000);
@@ -937,7 +937,7 @@ describe('Batch consumer implementation', () => {
     });
 
     describe('parse failure', () => {
-        test('should nack batch when parse fails and failureStrategy is Reject', async () => {
+        it('should nack batch when parse fails and failureStrategy is Reject', async () => {
             const parseError = new Error('parse failure');
             const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
                 channel,
@@ -960,7 +960,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[4], true, false);
         });
 
-        test('should requeue batch when parse fails and failureStrategy is Requeue', async () => {
+        it('should requeue batch when parse fails and failureStrategy is Requeue', async () => {
             const parseError = new Error('parse failure');
             const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
                 channel,
@@ -983,7 +983,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[4], true, true);
         });
 
-        test('should not ack or nack when parse fails and failureStrategy is Drop', async () => {
+        it('should not ack or nack when parse fails and failureStrategy is Drop', async () => {
             const parseError = new Error('parse failure');
             const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
                 channel,
@@ -1006,7 +1006,7 @@ describe('Batch consumer implementation', () => {
             expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
         });
 
-        test('should emit handlingFailed when parse fails', async () => {
+        it('should emit handlingFailed when parse fails', async () => {
             const parseError = new Error('parse failure');
             const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
                 channel,
@@ -1031,7 +1031,7 @@ describe('Batch consumer implementation', () => {
             expect(emittedError).toBe(parseError);
         });
 
-        test('close() should resolve after parse failure', async () => {
+        it('close() should resolve after parse failure', async () => {
             const parseError = new Error('parse failure');
             const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
                 channel,
@@ -1051,7 +1051,7 @@ describe('Batch consumer implementation', () => {
             await expect(consumerWithBadParser.close(500)).resolves.toBeUndefined();
         });
 
-        test('close() should resolve after async parse failure', async () => {
+        it('close() should resolve after async parse failure', async () => {
             const parseError = new Error('parse failure');
             const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
                 channel,
@@ -1073,7 +1073,7 @@ describe('Batch consumer implementation', () => {
             await expect(closePromise).resolves.toBeUndefined();
         });
 
-        test('should nack only failing message when split strategy and one message has bad content', async () => {
+        it('should nack only failing message when split strategy and one message has bad content', async () => {
             const consumerWithSplit = new BatchConsumerImplementation<{ value: number }>(
                 channel,
                 new TestQueue(),
@@ -1115,7 +1115,7 @@ describe('Batch consumer implementation', () => {
     });
 
     describe('acknowledgment', () => {
-        test('should not ack the same message twice when batches complete concurrently', async () => {
+        it('should not ack the same message twice when batches complete concurrently', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -1140,7 +1140,7 @@ describe('Batch consumer implementation', () => {
         });
     });
 
-    test('should not allow split batch failure strategy with batch size of 1', () => {
+    it('should not allow split batch failure strategy with batch size of 1', () => {
         expect(() => new BatchConsumerImplementation(
             channel,
             new TestQueue(),

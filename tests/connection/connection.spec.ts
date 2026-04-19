@@ -31,7 +31,7 @@ describe('Connection integration', () => {
     });
 
     describe('connect', () => {
-        test('transitions to connected state', async () => {
+        it('transitions to connected state', async () => {
             conn = new ConnectionImplementation(DIRECT_OPTIONS);
             const connectedHandler = vi.fn();
             conn.on('connected', connectedHandler);
@@ -42,7 +42,7 @@ describe('Connection integration', () => {
             expect(connectedHandler).toHaveBeenCalledTimes(1);
         });
 
-        test('concurrent connect() calls coalesce to single attempt', async () => {
+        it('concurrent connect() calls coalesce to single attempt', async () => {
             vi.mocked(amqp.connect).mockClear();
             conn = new ConnectionImplementation(DIRECT_OPTIONS);
             await Promise.all([conn.connect(), conn.connect()]);
@@ -50,7 +50,7 @@ describe('Connection integration', () => {
             expect(amqp.connect).toHaveBeenCalledTimes(1);
         });
 
-        test('calling native() should establish the connection', async () => {
+        it('calling native() should establish the connection', async () => {
             conn = new ConnectionImplementation(DIRECT_OPTIONS);
             const connectedHandler = vi.fn();
             conn.on('connected', connectedHandler);
@@ -59,7 +59,7 @@ describe('Connection integration', () => {
             expect(connectedHandler).toHaveBeenCalledTimes(1);
         });
 
-        test('calling connect() after close() should establish new connection', async () => {
+        it('calling connect() after close() should establish new connection', async () => {
             conn = new ConnectionImplementation(DIRECT_OPTIONS);
             await conn.connect();
             const connectedHandler = vi.fn();
@@ -72,7 +72,7 @@ describe('Connection integration', () => {
     });
 
     describe('close', () => {
-        test('transitions to closed state', async () => {
+        it('transitions to closed state', async () => {
             conn = new ConnectionImplementation(DIRECT_OPTIONS);
             await conn.connect();
             const closePromise = conn.close();
@@ -81,7 +81,7 @@ describe('Connection integration', () => {
             expect(conn.state()).toBe(ConnectionState.closed);
         });
 
-        test('emits close event', async () => {
+        it('emits close event', async () => {
             conn = new ConnectionImplementation(DIRECT_OPTIONS);
             await conn.connect();
             const closeHandlerMock = vi.fn();
@@ -90,13 +90,13 @@ describe('Connection integration', () => {
             expect(closeHandlerMock).toHaveBeenCalledTimes(1);
         });
 
-        test('close() on preconnect state is a no-op', async () => {
+        it('close() on preconnect state is a no-op', async () => {
             conn = new ConnectionImplementation(DIRECT_OPTIONS);
             await conn.close();
             expect(conn.state()).toBe(ConnectionState.preconnect);
         });
 
-        test('concurrent close() calls coalesce to single teardown', async () => {
+        it('concurrent close() calls coalesce to single teardown', async () => {
             conn = new ConnectionImplementation(DIRECT_OPTIONS);
             await conn.connect();
             const native = await conn.native();
@@ -108,7 +108,7 @@ describe('Connection integration', () => {
     });
 
     describe('reconnect', () => {
-        test('emits reconnecting event when server drops connection', async () => {
+        it('emits reconnecting event when server drops connection', async () => {
             conn = new ConnectionImplementation(DIRECT_OPTIONS);
             await conn.connect();
             const reconnectingMock = vi.fn();
@@ -117,7 +117,7 @@ describe('Connection integration', () => {
             await vi.waitFor(() => expect(reconnectingMock).toHaveBeenCalledTimes(1), { timeout: 20_000 });
         });
 
-        test('re-establishes connection and emits connected event after drop', async () => {
+        it('re-establishes connection and emits connected event after drop', async () => {
             conn = new ConnectionImplementation(DIRECT_OPTIONS);
             await conn.connect();
             const reconnectedMock = vi.fn();
@@ -128,7 +128,7 @@ describe('Connection integration', () => {
             expect(conn.state()).toBe(ConnectionState.connected);
         }, 120_000);
 
-        test('close during reconnection stops retry loop', async () => {
+        it('close during reconnection stops retry loop', async () => {
             conn = new ConnectionImplementation(DIRECT_OPTIONS);
             await conn.connect();
             const reconnectingMock = vi.fn();
@@ -139,7 +139,7 @@ describe('Connection integration', () => {
             expect(conn.state()).toBe(ConnectionState.closed);
         });
 
-        test('emits connectionRetryExhausted when all retries fail', async () => {
+        it('emits connectionRetryExhausted when all retries fail', async () => {
             conn = new ConnectionImplementation(DIRECT_OPTIONS, { maxRetries: 1, reconnectionTimeoutMs: 0 });
             await conn.connect();
             const exhaustedMock = vi.fn();
@@ -151,7 +151,7 @@ describe('Connection integration', () => {
     });
 
     describe('networking', () => {
-        test('connects successfully with 50ms upstream and 50ms downstream latency', async () => {
+        it('connects successfully with 50ms upstream and 50ms downstream latency', async () => {
             conn = new ConnectionImplementation(PROXIED_OPTIONS);
             await withToxic('rabbit', { type: 'latency', stream: 'upstream', toxicity: 1, attributes: { latency: 50 } }, () =>
                 withToxic('rabbit', { type: 'latency', stream: 'downstream', toxicity: 1, attributes: { latency: 50 } }, async () => {
