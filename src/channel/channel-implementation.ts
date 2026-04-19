@@ -1,4 +1,6 @@
+import { debuglog } from 'util';
 import { EventEmitter } from 'events';
+import { performance } from 'perf_hooks';
 import * as amqp from 'amqplib';
 import { ConfirmChannel, Replies } from 'amqplib';
 import { Connection } from '../connection';
@@ -9,9 +11,11 @@ import { ExchangeConsumerQueueOptions, ExchangeOptions } from '../exchange/types
 import { Consumer, ConsumerOptions } from '../consumer';
 import { DEFAULT_RETRY_STRATEGY, retryLoop } from '../retry';
 import { DrainError } from '../errors';
-import { swallowError } from '../utils';
+import { errToMessage, LIB_NAME, swallowError } from '../utils';
 import { Channel, ChannelEventMap } from './channel';
 import { ChannelWrapper, ChannelPublishOptions } from './types';
+
+const debug = debuglog(`${LIB_NAME}:channel`);
 
 export class ChannelImplementation extends EventEmitter<ChannelEventMap> implements Channel {
     private readonly wrapper: ChannelWrapper;
@@ -37,17 +41,23 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
 
         this.wrapper.channel = (async () => {
             try {
+                debug('connecting confirmed=%s', this.wrapper.isConfirmed);
                 const connection = await this.connection.native();
                 const channel = await (this.wrapper.isConfirmed ? connection.createConfirmChannel() : connection.createChannel());
+                debug('connected confirmed=%s', this.wrapper.isConfirmed);
+
                 channel.on('error', error => {
                     this.wrapper.channel = null;
+                    debug('native-error error=%s', error?.message);
                     this.emit('error', error);
                 });
                 channel.on(`close`, async () => {
                     this.wrapper.channel = null;
+                    debug('native-close');
                     this.emit('close');
                 });
                 channel.on('drain', () => {
+                    debug('native-drain');
                     this.emit('drain');
                 });
                 return channel;
@@ -67,6 +77,7 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
 
         this.closeHandler ??= (async () => {
             try {
+                debug('closing');
                 const wrapper = {
                     isConfirmed: this.wrapper.isConfirmed,
                     channel: await this.wrapper.channel,
@@ -76,6 +87,7 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
                 if (wrapper.isConfirmed)
                     await swallowError((wrapper.channel as ConfirmChannel).waitForConfirms());
                 await swallowError(wrapper.channel.close?.());
+                debug('closed');
             } finally {
                 this.closeHandler = null;
                 this.wrapper.channel = null;
@@ -106,6 +118,7 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
     }
 
     async publish(exchange: string, routingKey: string, content: Buffer, optionsArgs: ChannelPublishOptions): Promise<void> {
+        debug('publish exchange=%s routing-key=%s confirmed=%s', exchange, routingKey, this.wrapper.isConfirmed);
         const { drainTimeout, retryStrategy = DEFAULT_RETRY_STRATEGY, ...options } = optionsArgs;
 
         while (true) {
@@ -126,17 +139,25 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
                             err ? reject(err) : resolve(status);
                         });
                     }),
-                    err => err.message === 'message nacked',
+                    err => {
+                        debug('publish-nacked error=%s', errToMessage(err));
+                        return errToMessage(err) === 'message nacked';
+                    },
                 );
             }
-            if (publishResult)
+            if (publishResult) {
+                debug('publish-success exchange=%s routing-key=%s', exchange, routingKey);
                 return;
+            }
 
             if (!this.drainPromise) {
+                const drainStart = performance.now();
+                debug('backpressure-detected exchange=%s routing-key=%s', exchange, routingKey);
                 this.drainPromise = new Promise<void>((resolve, reject) => {
                     let timeoutHandler: NodeJS.Timeout;
                     const drainHandler = () => {
                         clearTimeout(timeoutHandler);
+                        debug('drain-cleared after=%dms', performance.now() - drainStart);
                         this.drainPromise = null;
                         resolve();
                     };
@@ -144,6 +165,7 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
                     timeoutHandler = setTimeout(async () => {
                         this.removeListener('drain', drainHandler);
                         this.drainPromise = null;
+                        debug('drain-timeout exchange=%s routing-key=%s timeout=%dms', exchange, routingKey, drainTimeout);
                         reject(new DrainError('Rabbit drain timeout'));
                         await native.close();
                     }, drainTimeout);

@@ -1,7 +1,8 @@
+import { debuglog } from 'util';
 import * as amqp from 'amqplib';
 import { Queue } from '../queue';
 import { Channel } from '../channel';
-import { deepMerge, last } from '../utils';
+import { deepMerge, errToMessage, last, LIB_NAME } from '../utils';
 import {
     BatchConsumerCallbackFn,
     BatchConsumerOptions,
@@ -13,6 +14,8 @@ import {
 } from './types';
 import { BatchConsumer, BatchConsumerEventMap } from './batch-consumer';
 import { BaseConsumer } from './base-consumer';
+
+const debug = debuglog(`${LIB_NAME}:consume:batch`);
 
 export class BatchConsumerImplementation<Message>
     extends BaseConsumer<BatchConsumerCallbackFn<Message>, BatchConsumerEventMap>
@@ -44,16 +47,19 @@ export class BatchConsumerImplementation<Message>
                 this.queue.name(),
             ]);
 
+            debug('start-listening queue=%s prefetch=%d ack=%s', queueName, this.options.prefetch, !this.shouldAutoAck);
             await channel.prefetch(this.options.prefetch);
+
             // this must be an object, so it is passed down as reference
             const stillConnected = { value: true };
             this.channel.once('close', () => {
+                debug(`channel-closed queue=%s`, queueName);
                 stillConnected.value = false;
             });
 
             const amqpConsumer = await channel.consume(
                 queueName,
-                this.messageReceiver.bind(this, callback, channel, stillConnected),
+                this.messageReceiver.bind(this, callback, channel, stillConnected, queueName),
                 {
                     ...this.options.consumeOptions,
                     noAck: this.shouldAutoAck,
@@ -70,15 +76,18 @@ export class BatchConsumerImplementation<Message>
         callback: BatchConsumerCallbackFn<Message>,
         originalChannel: amqp.Channel,
         stillConnected: { value: boolean },
+        queueName: string,
         msg: amqp.ConsumeMessage | null,
     ) {
         // empty message means consumer is canceled
         if (!msg) {
+            debug('receive-empty-message queue=%s', queueName);
             await this.channel.close();
             return;
         }
 
         this.currentlyProcessingMessages++;
+        debug('receive-message queue=%s in-flight=%d', queueName, this.currentlyProcessingMessages);
 
         // Create new batch if necessary
         if (this.batches.length === 0 || last(this.batches)?.state !== BatchState.WaitingForData) {
@@ -96,6 +105,7 @@ export class BatchConsumerImplementation<Message>
 
         // Last batch have enough messages, process it
         if (lastBatch.messages.length >= this.effectiveBatchSize) {
+            debug('processing-batch queue=%s reason=%s', queueName, 'full-batch');
             clearTimeout(this.batchFillTimer);
             this.batchFillTimer = undefined;
             await this.handleBatch(
@@ -103,6 +113,7 @@ export class BatchConsumerImplementation<Message>
                 originalChannel,
                 lastBatch,
                 stillConnected,
+                queueName,
             );
             return;
         }
@@ -110,12 +121,14 @@ export class BatchConsumerImplementation<Message>
         // Last batch has not enough messages, set max wait time before processing
         if (!this.batchFillTimer) {
             this.batchFillTimer = setTimeout(async () => {
+                debug('processing-batch queue=%s reason=%s', queueName, 'timeout');
                 this.batchFillTimer = undefined;
                 await this.handleBatch(
                     callback,
                     originalChannel,
                     lastBatch,
                     stillConnected,
+                    queueName,
                 );
             }, this.maxWaitTimeForBatch);
         }
@@ -152,12 +165,14 @@ export class BatchConsumerImplementation<Message>
         originalChannel: amqp.Channel,
         batch: BatchRecord,
         stillConnected: { value: boolean },
+        queueName: string,
     ) {
         // guard in case processing is called twice on the same batch
         if (batch.state !== BatchState.WaitingForData)
             return;
 
         try {
+            debug('processing-batch-started queue=%s batch-size=%d', queueName, batch.messages.length);
             batch.state = BatchState.Processing;
             const parsedMessages = await Promise.all(
                 batch.messages.map(async ({ rabbitMessage }) => ({
@@ -169,13 +184,22 @@ export class BatchConsumerImplementation<Message>
                 messages: parsedMessages,
                 channel: this.channel,
             });
+            debug('batch-processed queue=%s reason=%s', queueName, 'succeess');
             batch.state = BatchState.Processed;
         } catch (error) {
+            debug('batch-processing-failed queue=%s error=%s strategy=%s', queueName, errToMessage(error), this.options.batchFailureStrategy);
             this.emit('handlingFailed', error);
-            await this.handleBatchError(callback, originalChannel, batch, stillConnected);
+            await this.handleBatchError(
+                callback,
+                originalChannel,
+                batch,
+                stillConnected,
+                queueName,
+            );
         } finally {
-            await this.planMessageAcknowledgment(stillConnected, originalChannel);
-            this.removeProcessedBatches(stillConnected);
+            await this.planMessageAcknowledgment(stillConnected, originalChannel, queueName);
+            this.removeProcessedBatches(stillConnected, queueName);
+            debug('processing-batch-finished queue=%s batch-size=%d', queueName, batch.messages.length);
         }
     }
 
@@ -184,10 +208,12 @@ export class BatchConsumerImplementation<Message>
         originalChannel: amqp.Channel,
         batch: BatchRecord,
         stillConnected: { value: boolean },
+        queueName: string,
     ) {
         batch.state = BatchState.Failed;
 
         if (!stillConnected.value) {
+            debug('batch-acknowledged queue=%s reason=%s', queueName, 'disconnected');
             batch.state = BatchState.Acknowledged;
             return;
         }
@@ -197,12 +223,20 @@ export class BatchConsumerImplementation<Message>
             throw this.processError('Internal error: Cannot find batch in the list of batches');
 
         const strategy = this.options.batchFailureStrategy;
-        if (strategy === BatchFailureStrategy.Reject || batch.messages.length <= 1)
-            await this.handleFailureStrategy(originalChannel, batch, stillConnected, indexOfBatch);
-        else if (strategy === BatchFailureStrategy.Split)
-            await this.splitBatch(originalChannel, batch, stillConnected, indexOfBatch, callback);
-        else
+        if (strategy === BatchFailureStrategy.Reject || batch.messages.length <= 1) {
+            await this.handleFailureStrategy(originalChannel, batch, stillConnected, indexOfBatch, queueName);
+        } else if (strategy === BatchFailureStrategy.Split) {
+            await this.splitBatch(
+                originalChannel,
+                batch,
+                stillConnected,
+                indexOfBatch,
+                callback,
+                queueName,
+            );
+        } else {
             throw this.processError(`Not supported batch failure strategy: ${strategy}`);
+        }
     }
 
     private async handleFailureStrategy(
@@ -210,19 +244,21 @@ export class BatchConsumerImplementation<Message>
         batch: BatchRecord,
         stillConnected: { value: boolean },
         indexOfBatch: number,
+        queueName: string,
     ) {
         switch (this.options.failureStrategy) {
         case ConsumptionFailureStrategy.Drop:
             batch.state = BatchState.Processed;
-            await this.planMessageAcknowledgment(stillConnected, originalChannel);
+            debug('batch-processed queue=%s reason=%s', queueName, 'drop-strategy');
+            await this.planMessageAcknowledgment(stillConnected, originalChannel, queueName);
             break;
 
         case ConsumptionFailureStrategy.Requeue:
-            await this.nackMessages(originalChannel, batch, indexOfBatch, true);
+            await this.nackMessages(originalChannel, batch, indexOfBatch, true, queueName);
             break;
 
         case ConsumptionFailureStrategy.Reject:
-            await this.nackMessages(originalChannel, batch, indexOfBatch, false);
+            await this.nackMessages(originalChannel, batch, indexOfBatch, false, queueName);
             break;
 
         default:
@@ -235,6 +271,7 @@ export class BatchConsumerImplementation<Message>
         batch: BatchRecord,
         indexOfBatch: number,
         requeue: boolean,
+        queueName: string,
     ) {
         if (indexOfBatch > 0) {
             await Promise.all(batch.messages.map(msg =>
@@ -250,6 +287,7 @@ export class BatchConsumerImplementation<Message>
             throw this.processError('Internal error: Negative batch index during nack');
         }
 
+        debug('batch-acknowledged queue=%s reason=%s requeue=%s', queueName, 'nacked', requeue);
         batch.state = BatchState.Acknowledged;
     }
 
@@ -259,7 +297,9 @@ export class BatchConsumerImplementation<Message>
         stillConnected: { value: boolean },
         indexOfBatch: number,
         callback: BatchConsumerCallbackFn<Message>,
+        queueName: string,
     ) {
+        debug('batch-split queue=%s messages=%d', queueName, batch.messages.length);
         const splitBatches: BatchRecord[] = batch.messages.map(message => ({
             state: BatchState.WaitingForData,
             messages: [message],
@@ -270,15 +310,17 @@ export class BatchConsumerImplementation<Message>
             originalChannel,
             batch,
             stillConnected,
+            queueName,
         )));
     }
 
-    private removeProcessedBatches(stillConnected: { value: boolean }) {
+    private removeProcessedBatches(stillConnected: { value: boolean }, queueName: string) {
         if (!stillConnected.value || this.shouldAutoAck) {
             this.batches
                 .filter(batch =>
                     batch.state === BatchState.Processed || batch.state === BatchState.Acknowledging,
                 ).forEach(batch => {
+                    debug('batch-acknowledged queue=%s reason=%s', queueName, 'disconnected');
                     batch.state = BatchState.Acknowledged;
                 });
         }
@@ -292,6 +334,7 @@ export class BatchConsumerImplementation<Message>
         if (indicesOfBatchesToRemove.length === 0)
             return;
 
+        debug('acknowledged-cleanup queue=%s batches=%d', queueName, indicesOfBatchesToRemove.length);
         for (const index of indicesOfBatchesToRemove.reverse()) {
             const batch = this.batches[index];
             if (!batch)
@@ -302,12 +345,14 @@ export class BatchConsumerImplementation<Message>
             this.currentlyProcessingMessages -= batch.messages.length;
         }
 
+        debug('acknowledged-cleaned queue=%s batches=%d in-flight=%d', queueName, indicesOfBatchesToRemove.length, this.currentlyProcessingMessages);
         this.notifyMessageProcessed?.();
     }
 
     private async planMessageAcknowledgment(
         stillConnected: { value: boolean },
         originalChannel: amqp.Channel,
+        queueName: string,
     ) {
         if (this.batches.length === 0)
             return;
@@ -329,6 +374,7 @@ export class BatchConsumerImplementation<Message>
         });
 
         if (batchesToConfirm.length > 0 && last(batchesToConfirm)?.state === BatchState.Processed) {
+            debug('acknowledging-from-head queue=%s batches=%d', queueName, batchesToConfirm.length);
             const lastConfirmBatch = last(batchesToConfirm);
             if (!lastConfirmBatch)
                 throw this.processError('Internal Error: Last batch for confirmation not found');
@@ -342,6 +388,7 @@ export class BatchConsumerImplementation<Message>
             // keep await there in case API change in the future
             await originalChannel.ack(lastMessageOfLastConfirmBatch.rabbitMessage, true);
             batchesToConfirm.forEach(batch => {
+                debug('batch-acknowledged queue=%s reason=%s', queueName, 'success');
                 batch.state = BatchState.Acknowledged;
             });
         }
@@ -354,18 +401,22 @@ export class BatchConsumerImplementation<Message>
             )
             .forEach(batch => {
                 batch.confirmTimer = setTimeout(async () => {
-                    if (!stillConnected.value)
+                    if (!stillConnected.value) {
+                        debug('batch-acknowledged queue=%s reason=%s', queueName, 'disconnect');
                         batch.state = BatchState.Acknowledged;
+                    }
                     if (batch.state !== BatchState.Processed)
                         return;
+                    debug('acknowledging-out-of-order queue=%s', queueName);
                     batch.state = BatchState.Acknowledging;
                     await Promise.all(
                         batch.messages.map(({ rabbitMessage }) =>
                             originalChannel.ack(rabbitMessage, false),
                         ),
                     );
+                    debug('batch-acknowledged queue=%s reason=%s', queueName, 'success');
                     batch.state = BatchState.Acknowledged;
-                    this.removeProcessedBatches(stillConnected);
+                    this.removeProcessedBatches(stillConnected, queueName);
                 }, this.maxWaitTimeForAck);
             });
     }

@@ -1,12 +1,14 @@
+import { debuglog } from 'util';
 import { Channel } from '../channel';
 import { Queue } from '../queue';
 import { ConsumerOptions } from '../consumer';
-import { ProducerOptions } from '../producer/types';
-import { Producer, ProducerImplementation } from '../producer';
-import { deepMerge } from '../utils';
+import { ProducerOptions, Producer, ProducerImplementation } from '../producer';
+import { deepMerge, errToMessage, LIB_NAME } from '../utils';
 import { AssertionMode } from '../types';
 import { BindingArgs, Binding, BindingType, ExchangeConsumerQueueOptions, ExchangeTypes, ExchangeOptions } from './types';
 import { Exchange } from './exchange';
+
+const debug = debuglog(`${LIB_NAME}:exchange`);
 
 const DEFAULT_EXCHANGE_OPTIONS = {
     assertionMode: AssertionMode.Assert,
@@ -25,6 +27,7 @@ export class ExchangeImplementation implements Exchange {
     ) {
         this.options = deepMerge({}, DEFAULT_EXCHANGE_OPTIONS, options ?? {});
         this.channel.on('close', () => {
+            debug('native-close');
             this.assertPromise = null;
         });
     }
@@ -36,15 +39,19 @@ export class ExchangeImplementation implements Exchange {
         }
 
         this.assertPromise = (async () => {
+            debug('assert name=%s type=%s mode=%s', this.exchangeName, this.exchangeType, this.options?.assertionMode);
             const channel = await this.channel.native();
             switch (this.options?.assertionMode) {
             case AssertionMode.Check:
                 await channel.checkExchange(this.exchangeName);
+                debug('native-check-done name=%s', this.exchangeName);
                 break;
             case AssertionMode.Assert:
                 await channel.assertExchange(this.exchangeName, this.exchangeType, this.options);
+                debug('native-assert-done name=%s type=%s', this.exchangeName, this.exchangeType);
                 break;
             case AssertionMode.Passive:
+                debug('no-assert name=%s mode=%s', this.exchangeName, this.options.assertionMode);
                 break;
             default:
                 throw new Error(`Unknown assertion mode: ${this.options?.assertionMode}`);
@@ -53,6 +60,7 @@ export class ExchangeImplementation implements Exchange {
 
         await this.assertPromise;
         await this.rebind();
+        debug('assert-complete name=%s', this.exchangeName);
         return this;
     }
 
@@ -65,6 +73,7 @@ export class ExchangeImplementation implements Exchange {
             this.name(),
             queue.name(),
         ]);
+        debug('bind-queue exchange=%s queue=%s pattern=%s', thisName, queueName, pattern);
 
         const doesBindingMatch = (binding: Binding) =>
             binding.type === BindingType.queue &&
@@ -82,6 +91,7 @@ export class ExchangeImplementation implements Exchange {
 
         const channel = await this.channel.native();
         await channel.bindQueue(queueName, thisName, pattern, args);
+        debug('bind-queue-done exchange=%s queue=%s pattern=%s', thisName, queueName, pattern);
         return this;
     }
 
@@ -90,6 +100,7 @@ export class ExchangeImplementation implements Exchange {
             this.name(),
             exchange.name(),
         ]);
+        debug('bind-exchange dest=%s source=%s pattern=%s', thisName, exchangeName, pattern);
 
         const doesBindingMatch = (binding: Binding) =>
             binding.type === BindingType.exchange &&
@@ -107,10 +118,12 @@ export class ExchangeImplementation implements Exchange {
 
         const channel = await this.channel.native();
         await channel.bindExchange(exchangeName, thisName, pattern, args);
+        debug('bind-exchange-done dest=%s source=%s pattern=%s', thisName, exchangeName, pattern);
         return this;
     }
 
     private async rebind() {
+        debug('rebind name=%s bindings=%d', this.exchangeName, this.bindings.length);
         const promises = await Promise.allSettled(
             this.bindings.map(
                 binding => (binding.type === BindingType.queue
@@ -118,9 +131,13 @@ export class ExchangeImplementation implements Exchange {
                     : this.bindExchange(binding.exchange, binding.pattern, binding.args)),
             ),
         );
+
         const failedPromise = promises.find(p => p.status === 'rejected');
-        if (failedPromise)
+        if (failedPromise) {
+            debug('rebind-failed error=%s', errToMessage(failedPromise.reason));
             throw failedPromise.reason;
+        }
+        debug('rebind-complete name=%s', this.exchangeName);
     }
 
     async createConsumer<T>(options: ConsumerOptions<T> = {}, queueOptions: ExchangeConsumerQueueOptions = {}) {

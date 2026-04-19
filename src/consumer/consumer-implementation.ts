@@ -1,10 +1,13 @@
+import { debuglog } from 'util';
 import * as amqp from 'amqplib';
 import { Queue } from '../queue';
 import { Channel } from '../channel';
-import { deepMerge } from '../utils';
+import { deepMerge, errToMessage, LIB_NAME } from '../utils';
 import { Consumer, ConsumerEventMap } from './consumer';
 import { ConsumerCallbackFn, ConsumerOptions, ConsumptionFailureStrategy, DEFAULT_CONSUMER_OPTIONS } from './types';
 import { BaseConsumer } from './base-consumer';
+
+const debug = debuglog(`${LIB_NAME}:consume:simple`);
 
 export class ConsumerImplementation<Message>
     extends BaseConsumer<ConsumerCallbackFn<Message>, ConsumerEventMap>
@@ -30,6 +33,8 @@ export class ConsumerImplementation<Message>
                 this.queue.name(),
             ]);
 
+            const shouldAck = this.shouldAcknowledge();
+            debug('start-listening queue=%s prefetch=%d ack=%s', queueName, this.options.prefetch, shouldAck);
             await channel.prefetch(this.options.prefetch);
 
             // this must be an object, so it is passed down as reference
@@ -37,14 +42,14 @@ export class ConsumerImplementation<Message>
                 isConnected: true,
             };
             this.channel.once('close', () => {
+                debug(`channel-closed queue=%s`, queueName);
                 channelStatus.isConnected = false;
             });
 
-            const shouldAck = this.shouldAcknowledge();
             this.currentlyProcessingMessages = 0;
             const amqpConsumer = await channel.consume(
                 queueName,
-                this.messageReceiver.bind(this, callback, shouldAck, channel, channelStatus),
+                this.messageReceiver.bind(this, callback, shouldAck, channel, channelStatus, queueName),
                 {
                     ...this.options.consumeOptions,
                     noAck: !shouldAck,
@@ -66,16 +71,19 @@ export class ConsumerImplementation<Message>
         shouldAck: boolean,
         originalChannel: amqp.Channel,
         channelStatus: { isConnected: boolean },
+        queueName: string,
         msg: amqp.ConsumeMessage | null,
     ) {
         // empty message means consumer is canceled
         if (!msg) {
+            debug('receive-empty-message queue=%s', queueName);
             await this.channel.close();
             return;
         }
 
         try {
             this.currentlyProcessingMessages++;
+            debug('receive-message queue=%s in-flight=%d', queueName, this.currentlyProcessingMessages);
             const { content } = msg;
             const parsed = await this.options.parseMessageFn(content);
             await callback({
@@ -87,6 +95,7 @@ export class ConsumerImplementation<Message>
                 // keep await there in case API change in the future
                 await originalChannel.ack(msg);
         } catch (error) {
+            debug('message-handling-failed queue=%s error=%s strategy=%s', queueName, errToMessage(error), this.options.failureStrategy);
             this.emit('handlingFailed', error);
             if (!channelStatus.isConnected)
                 return;
@@ -107,6 +116,7 @@ export class ConsumerImplementation<Message>
             }
         } finally {
             this.currentlyProcessingMessages--;
+            debug('message-processed queue=%s in-flight=%d', queueName, this.currentlyProcessingMessages);
             this.notifyMessageProcessed?.();
         }
     }

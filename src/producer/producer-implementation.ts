@@ -1,7 +1,8 @@
+import { debuglog } from 'util';
 import { EventEmitter } from 'events';
 import { Channel } from '../channel';
 import { Exchange } from '../exchange';
-import { deepMerge } from '../utils';
+import { deepMerge, errToMessage, LIB_NAME } from '../utils';
 import { Producer, ProducerEventMap } from './producer';
 import {
     DEFAULT_PRODUCER_OPTIONS,
@@ -11,6 +12,8 @@ import {
     ProducerPublishOptions,
     RoutingKeyGenerator,
 } from './types';
+
+const debug = debuglog(`${LIB_NAME}:publish`);
 
 export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>> implements Producer<T> {
     private readonly options: Required<ProducerOptions<T>>;
@@ -29,15 +32,21 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
         this.channel.on('error', this.handleChannelError);
 
         this.interval = setInterval(() => {
+            let deleted = 0;
             const now = performance.now();
             for (const entry of this.inFlight) {
-                if (entry.expiresAt <= now)
+                if (entry.expiresAt <= now) {
                     this.inFlight.delete(entry);
+                    deleted++;
+                }
             }
+            if (deleted > 0)
+                debug('deleted-in-flight deleted=%d remaining=%d', deleted, this.inFlight.size);
         }, Math.max(100, this.options.errorWindow));
     }
 
     async close(): Promise<void> {
+        debug('closing');
         this.closed = true;
         clearInterval(this.interval);
         this.channel.off('error', this.handleChannelError);
@@ -45,6 +54,7 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
 
     private readonly handleChannelError = () => {
         const now = performance.now();
+        debug('channel-error in-flight=%d', this.inFlight.size);
         for (const entry of this.inFlight) {
             if (entry.expiresAt >= now) {
                 // Remove from in-flight before retrying; if the republish fails it will be
@@ -52,7 +62,10 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
                 this.inFlight.delete(entry);
                 this.publish(entry.message, entry.routingKey, entry.options)
                     .then(() => { /* ignore */ })
-                    .catch(err => this.emit(ProducerEvents.republishFailed, entry.message, err));
+                    .catch(err => {
+                        debug('republish-failed error=%s', errToMessage(err));
+                        this.emit(ProducerEvents.republishFailed, entry.message, err);
+                    });
             }
         }
     };
@@ -76,6 +89,7 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
             this.exchange.name(),
         ]);
 
+        debug('publish exchange=%s routing-key=%s', exchangeName, actualKey);
         this.emit(ProducerEvents.beforeSend, message, buffer);
         await this.channel.publish(
             exchangeName,
@@ -87,6 +101,7 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
                 ...finalOptions.options,
             },
         );
+        debug('published exchange=%s routing-key=%s', exchangeName, actualKey);
 
         // Global interval will remove this entry once the window expires.
         this.inFlight.add({

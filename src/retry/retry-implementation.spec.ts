@@ -40,13 +40,13 @@ describe('Retry', () => {
             expect(calls).toBe(1);
         });
 
-        test('rethrows non-Error exceptions without retrying', async () => {
+        test('rethrows non-Error exceptions with retrying', async () => {
             const thrown = 'string error';
             await expect(
                 retryLoop(zeroDelayStrategy, () => {
                     throw thrown;
                 }),
-            ).rejects.toBe(thrown);
+            ).rejects.toThrow(TooManyRetriesError);
         });
 
         test('works with async callback', async () => {

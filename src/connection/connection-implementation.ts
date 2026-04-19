@@ -1,3 +1,4 @@
+import { debuglog } from 'util';
 import { EventEmitter } from 'events';
 import * as amqp from 'amqplib';
 import { DEFAULT_RETRY_STRATEGY, normalizeRetryStrategy, retryLoop, RetryStrategy } from '../retry';
@@ -9,7 +10,10 @@ import { ExchangeConsumerQueueOptions } from '../exchange/types';
 import { Queue } from '../queue';
 import { ProducerOptions, Producer } from '../producer';
 import { TooManyRetriesError } from '../errors';
+import { errToMessage, LIB_NAME, maskAmqpUrl } from '../utils';
 import { Connection, ConnectionEventMap, ConnectionState } from './connection';
+
+const debug = debuglog(`${LIB_NAME}:connection`);
 
 
 export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> implements Connection {
@@ -38,6 +42,7 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
 
         this.connection = (async () => {
             this.connectionState = ConnectionState.connecting;
+            debug('connecting url=%s', maskAmqpUrl(this.options));
             try {
                 const nativeConnection = await retryLoop(
                     this.retryStrategy,
@@ -49,30 +54,40 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
                     },
                     error => {
                         this.emit('connectionError', error);
+                        debug('retry-connection error=%s', errToMessage(error));
                         return true;
                     },
                 );
                 if (!nativeConnection)
                     return null;
+
                 this.connectionState = ConnectionState.connected;
+                debug('connected url=%s', maskAmqpUrl(this.options));
                 this.emit('connected', this);
+
                 nativeConnection.on('close', () => {
                     this.connection = null;
                     if ([ConnectionState.closed, ConnectionState.closing].includes(this.connectionState))
                         return;
+                    debug('reconnecting url=%s', maskAmqpUrl(this.options));
                     this.emit('reconnecting');
-                    this.connect().catch(() => { /* ignore */
-                    });
+                    this.connect().catch(() => { /* ignore */ });
                 });
                 nativeConnection.on('error', err => {
+                    debug('native-error error=%s', errToMessage(err));
                     this.emit('error', err);
                 });
+
                 return nativeConnection;
             } catch (err) {
                 this.connection = null;
                 this.connectionState = ConnectionState.closed;
-                if (err instanceof TooManyRetriesError)
+                if (err instanceof TooManyRetriesError) {
                     this.emit('connectionRetryExhausted');
+                    debug('retry-exhausted last-error=%s', err.message);
+                } else {
+                    debug('connecting-error error=%s', (err as Error)?.message);
+                }
                 throw err;
             }
         })();
@@ -89,6 +104,7 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
             return this.closingHandler;
 
         this.closingHandler = (async () => {
+            debug('closing url=%s', maskAmqpUrl(this.options));
             this.connectionState = ConnectionState.closing;
             const connection = await this.connection?.catch(() => { /* ignore */ });
             try {
@@ -98,6 +114,7 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
                 this.closingHandler = null;
                 this.connection = null;
                 this.connectionState = ConnectionState.closed;
+                debug('closed url=%s', maskAmqpUrl(this.options));
                 this.emit('close');
             }
         })();

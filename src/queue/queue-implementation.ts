@@ -1,13 +1,15 @@
+import { debuglog } from 'util';
 import { Channel } from '../channel';
 import { Exchange } from '../exchange';
 import { ConsumerImplementation, ConsumerOptions, Consumer } from '../consumer';
-import { ProducerOptions } from '../producer/types';
-import { ProducerImplementation } from '../producer';
+import { ProducerOptions, ProducerImplementation } from '../producer';
 import { predefined } from '../index';
-import { deepMerge } from '../utils';
+import { deepMerge, LIB_NAME } from '../utils';
 import { AssertionMode } from '../types';
 import { Queue } from './queue';
 import { BindingArgs, QueueOptions } from './types';
+
+const debug = debuglog(`${LIB_NAME}:queue`);
 
 const DEFAULT_QUEUE_OPTIONS = {
     assertionMode: AssertionMode.Assert,
@@ -24,6 +26,7 @@ export class QueueImplementation implements Queue {
     ) {
         this.options = deepMerge({}, DEFAULT_QUEUE_OPTIONS, options ?? {});
         this.channel.on('close', () => {
+            debug('native-close');
             this.assertPromise = null;
         });
     }
@@ -35,15 +38,19 @@ export class QueueImplementation implements Queue {
         }
 
         this.assertPromise = (async () => {
+            debug('assert name=%s mode=%s', this.queueName, this.options?.assertionMode);
             const channel = await this.channel.native();
             switch (this.options?.assertionMode) {
             case AssertionMode.Check:
                 await channel.checkQueue(this.queueName);
+                debug('native-check-done name=%s', this.queueName);
                 break;
             case AssertionMode.Assert:
                 await channel.assertQueue(this.queueName, this.options);
+                debug('native-assert-done name=%s', this.queueName);
                 break;
             case AssertionMode.Passive:
+                debug('no-assert name=%s mode=%s', this.queueName, this.options.assertionMode);
                 break;
             default:
                 throw new Error(`Unknown assertion mode: ${this.options?.assertionMode}`);
@@ -51,6 +58,7 @@ export class QueueImplementation implements Queue {
         })();
 
         await this.assertPromise;
+        debug('assert-complete name=%s', this.queueName);
         return this;
     }
 
@@ -59,6 +67,7 @@ export class QueueImplementation implements Queue {
     }
 
     async bindExchange(exchange: Exchange, pattern: string, args?: BindingArgs) {
+        debug('bind-exchange queue=%s pattern=%s', this.queueName, pattern);
         await exchange.bindQueue(this, pattern, args);
         return this;
     }

@@ -1,9 +1,12 @@
+import { debuglog } from 'util';
 import { EventEmitter } from 'node:events';
 import { Queue } from '../queue';
 import { Channel } from '../channel';
-import { sleepPromise } from '../utils';
+import { errToMessage, LIB_NAME, sleepPromise } from '../utils';
 import { RECONNECT_TIMEOUT } from './consumer';
 import { ConsumerWrapper } from './types';
+
+const debug = debuglog(`${LIB_NAME}:consume`);
 
 /**
  * Events emitted by a {@link BaseConsumer}.
@@ -37,11 +40,14 @@ export abstract class BaseConsumer<
     }
 
     private readonly channelCloseCallback = () => {
+        debug(`native-close reconnect-in=%dms`, RECONNECT_TIMEOUT);
         setTimeout(async () => {
             if (this.consumer) {
+                debug(`reconnecting`);
                 const { callback } = await this.consumer;
                 this.consumer = null;
                 this.listen(callback).catch(err => {
+                    debug(`reconnect-error error=%s`, errToMessage(err));
                     (this as EventEmitter<BaseConsumerEventMap>).emit('reconnectError', err);
                     void this.close();
                 });
@@ -53,15 +59,18 @@ export abstract class BaseConsumer<
 
     async close(timeout = 30000): Promise<void> {
         if (this.consumer) {
+            debug(`closing timeout=%dms`, timeout);
             const consumer = await this.consumer;
             const channel = await this.channel.native();
 
+            debug('closing tag=%s in-flight=%d', consumer.amqpConsumer.consumerTag, this.currentlyProcessingMessages);
             await channel.cancel(consumer.amqpConsumer.consumerTag);
 
             const waitForAllMessagesPromise = new Promise<void>(resolve => {
                 this.notifyMessageProcessed = () => {
                     if (this.currentlyProcessingMessages === 0)
                         resolve();
+
                 };
                 this.notifyMessageProcessed();
             });
@@ -74,6 +83,7 @@ export abstract class BaseConsumer<
                     }),
                 ]);
             } finally {
+                debug('closed');
                 (this as EventEmitter<BaseConsumerEventMap>).emit('close');
                 this.consumer = null;
             }

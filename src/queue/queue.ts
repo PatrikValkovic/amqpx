@@ -1,7 +1,6 @@
 import { Exchange } from '../exchange';
 import { ConsumerOptions, Consumer } from '../consumer';
-import { ProducerOptions } from '../producer/types';
-import { Producer } from '../producer';
+import { ProducerOptions, Producer } from '../producer';
 import { BindingArgs } from './types';
 
 export interface Queue {

@@ -1,7 +1,10 @@
-import { sleepPromise } from '../utils';
+import { debuglog } from 'util';
+import { errToMessage, LIB_NAME, sleepPromise } from '../utils';
 import { TooManyRetriesError } from '../errors';
 import { MaybePromise } from '../types';
 import { normalizeRetryStrategy, RetryStrategy } from './retry-strategy';
+
+const debug = debuglog(`${LIB_NAME}:retry`);
 
 /**
  * Retries callback until it succeeds or reaches max retries.
@@ -21,28 +24,30 @@ import { normalizeRetryStrategy, RetryStrategy } from './retry-strategy';
 export const retryLoop = async <T>(
     strategy: RetryStrategy,
     callback: () => MaybePromise<T>,
-    shouldRetry: (error: Error) => boolean = () => true,
+    shouldRetry: (error: unknown) => boolean = () => true,
 ) => {
     const normalizedStrategy = normalizeRetryStrategy(strategy);
     let attempt = 0;
-    let lastErr: Error | null = null;
+    let lastErr: unknown | null = null;
 
     while (attempt < normalizedStrategy.maxRetries) {
         attempt++;
+        debug('attempt current=%d total=%d', attempt, normalizedStrategy.maxRetries);
         try {
             return await callback();
         } catch (err) {
-            if (err instanceof Error) {
-                lastErr = err;
-                if (shouldRetry(err))
-                    await sleepPromise(normalizedStrategy.reconnectionTimeoutMs(attempt));
-                else
-                    throw err;
+            lastErr = err;
+            if (shouldRetry(err)) {
+                const delay = normalizedStrategy.reconnectionTimeoutMs(attempt);
+                debug('attempt-failed retrying-in=%dms error=%s', delay, errToMessage(err));
+                await sleepPromise(delay);
             } else {
+                debug('non-retryable-error attempt=%d error=%s', attempt, errToMessage(err));
                 throw err;
             }
         }
     }
 
-    throw new TooManyRetriesError(`Too many retries: ${lastErr?.message}`);
+    debug('max-retries-exhausted attempts=%d error=%s', normalizedStrategy.maxRetries, errToMessage(lastErr));
+    throw new TooManyRetriesError(`Too many retries`, lastErr);
 };
