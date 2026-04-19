@@ -13,13 +13,17 @@ export const deepMerge = <T extends object>(target: T, ...sources: Array<Partial
     if (isObject(target) && isObject(source)) {
         for (const key in source) {
             if (Object.prototype.hasOwnProperty.call(source, key)) {
-                const sourceValue = source[key];
-                if (isObject(sourceValue) && isObject(target[key]))
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    target[key] = deepMerge(target[key] as any, sourceValue as any);
-                else
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    (target as any)[key] = sourceValue;
+                const typedKey = key as keyof T;
+                const sourceValue = source[typedKey];
+                const targetValue = target[typedKey];
+                if (isObject(sourceValue) && isObject(targetValue)) {
+                    target[typedKey] = deepMerge(
+                        targetValue as T[keyof T] & object,
+                        sourceValue as Partial<T[keyof T] & object>,
+                    ) as T[keyof T];
+                } else {
+                    target[typedKey] = sourceValue as T[keyof T];
+                }
             }
         }
     }
