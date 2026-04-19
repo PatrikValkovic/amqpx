@@ -18,6 +18,7 @@ const debug = debuglog(`${LIB_NAME}:publish`);
 export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>> implements Producer<T> {
     private readonly options: Required<ProducerOptions<T>>;
     private readonly inFlight = new Set<InFlightEntry<T>>();
+    private readonly pendingPublishes = new Set<Promise<void>>();
     private readonly interval: ReturnType<typeof setInterval>;
     private closed = false;
 
@@ -49,6 +50,7 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
     async close(): Promise<void> {
         debug('closing');
         this.closed = true;
+        await Promise.allSettled(this.pendingPublishes);
         clearInterval(this.interval);
         this.channel.off('error', this.handleChannelError);
     }
@@ -92,7 +94,8 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
 
         debug('publish exchange=%s routing-key=%s', exchangeName, actualKey);
         this.emit(ProducerEvents.beforeSend, message, buffer);
-        await this.channel.publish(
+
+        const publishPromise = this.channel.publish(
             exchangeName,
             actualKey,
             buffer,
@@ -102,6 +105,12 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
                 ...finalOptions.options,
             },
         );
+        this.pendingPublishes.add(publishPromise);
+        try {
+            await publishPromise;
+        } finally {
+            this.pendingPublishes.delete(publishPromise);
+        }
         debug('published exchange=%s routing-key=%s', exchangeName, actualKey);
 
         // Global interval will remove this entry once the window expires.
