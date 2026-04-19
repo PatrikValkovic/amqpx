@@ -61,3 +61,4 @@ Each layer expose factory methods to create layer below (e.g. `Channel.queue()` 
 - Message serialization default JSON; override via `serialize`/`parse` options on Producer/Consumer.
 - `ConsumptionFailedStrategy` on Consumer control handler errors: Drop (ack), Requeue, or Reject (nack).
 - Retry strategies use `externallyResolvedPromise` + `sleepPromise` utilities from `src/utils.ts`.
+- AMQP ack/nack is tracked per-message on the broker: calling `ack(tag, multiple=true)` only affects messages that are still unacknowledged. A message that was already nacked is unaffected by a subsequent bulk ack covering its delivery tag — the broker will not re-ack it.

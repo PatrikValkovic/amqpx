@@ -20,7 +20,6 @@ export const deepMerge = <T extends object>(target: T, ...sources: Array<Partial
                 else
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     (target as any)[key] = sourceValue;
-
             }
         }
     }
