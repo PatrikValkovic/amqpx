@@ -198,6 +198,19 @@ describe('Batch consumer', () => {
             expect(listener).toHaveBeenCalledTimes(3);
         });
 
+        it('should close channel when consumer is canceled via null message', async () => {
+            const listener = vi.fn().mockResolvedValue(undefined);
+            await consumer.listen(listener);
+
+            const handler = channel.nativeChannel.consume.mock.lastCall![1];
+            await handler(null);
+
+            expect(channel.close).toHaveBeenCalledTimes(1);
+            expect(listener).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.ack).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
+        });
+
         it('should process partial batch', async () => {
             vitest.useFakeTimers();
             const consumer = new BatchConsumerImplementation(
@@ -882,6 +895,62 @@ describe('Batch consumer', () => {
 
             expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(0);
             expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(0);
+        });
+
+        it('should skip batch processing when channel disconnects before fill timer fires', async () => {
+            vitest.useFakeTimers();
+            const consumer = new BatchConsumerImplementation(channel, new TestQueue(), {
+                batchSize: 5,
+                maxWaitTimeForBatch: 100,
+            });
+            const listener = vi.fn().mockResolvedValue(undefined);
+
+            await consumer.listen(listener);
+
+            const { consumePromise: cp1 } = processGeneratedMessages(channel, 3);
+            await cp1;
+
+            channel.emit('close');
+
+            await vitest.advanceTimersByTimeAsync(500);
+
+            expect(listener).not.toHaveBeenCalled();
+
+            const { consumePromise: cp2, rabbitMessages } = processGeneratedMessages(channel, 5);
+            await vitest.advanceTimersByTimeAsync(0);
+            await cp2;
+
+            expect(channel.nativeChannel.consume).toHaveBeenCalledTimes(2);
+            expect(listener).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
+            expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
+        });
+
+        it('should not ack when channel disconnects before confirmTimer fires', async () => {
+            vitest.useFakeTimers();
+            const consumer = new BatchConsumerImplementation(channel, new TestQueue(), {
+                batchSize: 5,
+                maxWaitTimeForAck: 200,
+            });
+            const listener = vi.fn()
+                .mockImplementationOnce(() => sleepPromise(1000))
+                .mockResolvedValue(undefined);
+
+            await consumer.listen(listener);
+            const { consumePromise } = processGeneratedMessages(channel, 10);
+
+            await vitest.advanceTimersByTimeAsync(50);
+
+            channel.emit('close');
+
+            await vitest.advanceTimersByTimeAsync(250);
+            await vitest.advanceTimersByTimeAsync(1000);
+            await consumePromise;
+
+            expect(channel.nativeChannel.ack).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
+            expect(listener).toHaveBeenCalledTimes(2);
         });
 
         it('should try to reconnect after channel close', async () => {
