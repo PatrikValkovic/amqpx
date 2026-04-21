@@ -4,7 +4,10 @@ export default defineConfig({
     test: {
         include: ['tests/**/*.spec.ts'],
         coverage: {
-            exclude: ['tests/**'],
+            exclude: [
+                'tests/**',
+                'src/test/**',
+            ],
         },
         globals: true,
         testTimeout: 30_000,

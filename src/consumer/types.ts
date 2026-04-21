@@ -28,7 +28,7 @@ export enum BatchFailureStrategy  {
      * Reject the whole batch, the consumer will not try to reprocess the messages.
      * Each message in the batch is process according to the `failureStrategy` property.
      */
-    Reject = 'Reject',
+    Fail = 'Fail',
     /**
      * Split the batch into individual messages and try to process each message separately.
      * The listener will be called for each message, where the batch passed into the listener
@@ -171,7 +171,7 @@ export const DEFAULT_CONSUMER_OPTIONS = {
     batchSize: -1,
     maxWaitTimeForBatch: 100,
     maxWaitTimeForAck: 0,
-    batchFailureStrategy: BatchFailureStrategy.Reject,
+    batchFailureStrategy: BatchFailureStrategy.Fail,
     channel: null,
 } as const satisfies Required<BatchConsumerOptions<unknown>> & Required<ConsumerOptions<unknown>>;
 

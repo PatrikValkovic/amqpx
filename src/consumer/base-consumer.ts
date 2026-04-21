@@ -52,6 +52,7 @@ export abstract class BaseConsumer<
                 } catch (err) {
                     debug(`reconnect-error error=%s`, errToMessage(err));
                     (this as EventEmitter<BaseConsumerEventMap>).emit('reconnectError', err);
+                    this.consumer = null;
                     void this.close();
                 }
             }

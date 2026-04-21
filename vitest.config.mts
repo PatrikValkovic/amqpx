@@ -5,5 +5,10 @@ export default defineConfig({
         include: ['**/*.spec.ts'],
         exclude: ['tests/**', 'node_modules/**'],
         globals: true,
+        coverage: {
+            exclude: [
+                'src/test/**',
+            ],
+        },
     },
 });

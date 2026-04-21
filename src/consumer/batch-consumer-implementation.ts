@@ -33,7 +33,7 @@ export class BatchConsumerImplementation<Message>
     ) {
         super(channel, queue);
         this.options = deepMerge({}, DEFAULT_CONSUMER_OPTIONS, options) as typeof DEFAULT_CONSUMER_OPTIONS;
-        if (this.effectiveBatchSize === 1 && this.options.batchFailureStrategy === BatchFailureStrategy.Split)
+        if (this.effectiveBatchSize <= 1 && this.options.batchFailureStrategy === BatchFailureStrategy.Split)
             throw new Error('Cannot have split batch failure strategy when batch size is 1');
     }
 
@@ -56,6 +56,10 @@ export class BatchConsumerImplementation<Message>
             this.channel.once('close', () => {
                 debug(`channel-closed queue=%s`, queueName);
                 stillConnected.value = false;
+            });
+            this.once('close', () => {
+                stillConnected.value = false;
+                debug(`catch-close-event queue=%s`, queueName);
             });
 
             const amqpConsumer = await channel.consume(
@@ -140,6 +144,12 @@ export class BatchConsumerImplementation<Message>
             return this.options.batchSize;
         if (this.options.prefetch > 0)
             return this.options.prefetch;
+        debug(
+            'use-default-batch-size effective-batch-size=%d provided-batch-size=%d provided-prefetch=%d',
+            BatchConsumerImplementation.DEFAULT_BATCH_SIZE,
+            this.options.batchSize,
+            this.options.prefetch,
+        );
         return BatchConsumerImplementation.DEFAULT_BATCH_SIZE;
     }
 
@@ -230,7 +240,7 @@ export class BatchConsumerImplementation<Message>
             throw this.processError('Internal error: Cannot find batch in the list of batches');
 
         const strategy = this.options.batchFailureStrategy;
-        if (strategy === BatchFailureStrategy.Reject || batch.messages.length <= 1) {
+        if (strategy === BatchFailureStrategy.Fail || batch.messages.length <= 1) {
             await this.handleFailureStrategy(originalChannel, batch, stillConnected, indexOfBatch, queueName);
         } else if (strategy === BatchFailureStrategy.Split) {
             await this.splitBatch(

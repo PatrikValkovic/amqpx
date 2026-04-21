@@ -2,7 +2,7 @@ import { TestChannel, TestQueue } from '../extensions/vitest';
 import { sleepPromise, zip } from '../utils';
 import { processGeneratedMessages } from '../test/generate-messages';
 import { BatchConsumerImplementation } from './batch-consumer-implementation';
-import { ConsumptionFailureStrategy, BatchFailureStrategy } from './types';
+import { BatchFailureStrategy, ConsumptionFailureStrategy } from './types';
 
 describe('Batch consumer', () => {
     let channel: TestChannel;
@@ -37,24 +37,6 @@ describe('Batch consumer', () => {
         });
     });
 
-    describe('listen', () => {
-        it('should not allow to hook in two listeners', async () => {
-            const consumer = new BatchConsumerImplementation(
-                channel,
-                new TestQueue(),
-                {
-                    batchSize: 5,
-                },
-            );
-            const listener = vi.fn().mockImplementation(
-                () => Promise.resolve(),
-            );
-
-            await consumer.listen(listener);
-            await expect(consumer.listen(listener)).rejects.toThrow('Listener is already attached');
-        });
-    });
-
     describe('consuming', () => {
         it('should process batch', async () => {
             const consumer = new BatchConsumerImplementation(
@@ -83,6 +65,67 @@ describe('Batch consumer', () => {
                     rabbitMessage,
                 })),
             });
+        });
+
+        it('should process multiple batches', async () => {
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                },
+            );
+            const listener = vi.fn().mockImplementation(
+                () => Promise.resolve(),
+            );
+
+            await consumer.listen(listener);
+            const { rabbitMessages, messagesContent, consumePromise } = processGeneratedMessages(channel, 20);
+            await consumePromise;
+
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(4);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[9], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[14], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[19], true);
+
+            expect(listener).toHaveBeenCalledTimes(4);
+            expect(listener).toHaveBeenCalledWith({
+                channel,
+                messages: zip(messagesContent.slice(0, 5), rabbitMessages.slice(0, 5)).map(([message, rabbitMessage]) => ({
+                    message,
+                    rabbitMessage,
+                })),
+            });
+        });
+
+        it('should not allow to hook in two listeners', async () => {
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                },
+            );
+            const listener = vi.fn().mockImplementation(
+                () => Promise.resolve(),
+            );
+
+            await consumer.listen(listener);
+            await expect(consumer.listen(listener)).rejects.toThrow('Listener is already attached');
+        });
+
+        it('should close channel when consumer is canceled via null message', async () => {
+            const listener = vi.fn().mockResolvedValue(undefined);
+            await consumer.listen(listener);
+
+            const handler = channel.nativeChannel.consume.mock.lastCall![1];
+            await handler(null);
+
+            expect(channel.close).toHaveBeenCalledTimes(1);
+            expect(listener).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.ack).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
         });
 
         it('should set batch size based on prefetch when batch size is not provided', async () => {
@@ -118,8 +161,7 @@ describe('Batch consumer', () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
-                {
-                },
+                {},
             );
             const listener = vi.fn().mockImplementation(
                 () => Promise.resolve(),
@@ -131,6 +173,7 @@ describe('Batch consumer', () => {
 
             expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(2);
             expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[19], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[39], true);
 
             expect(listener).toHaveBeenCalledTimes(2);
             expect(listener).toHaveBeenCalledWith({
@@ -153,13 +196,23 @@ describe('Batch consumer', () => {
             );
             const listener = vi.fn().mockResolvedValue(undefined);
 
-            await consumer.listen(listener);
-            const { rabbitMessages, consumePromise } = processGeneratedMessages(channel, 4);
-            await consumePromise;
+            const realClearTimeout = global.clearTimeout;
+            const clearTimeoutMock = vitest.spyOn(global, 'clearTimeout').mockImplementation(async handler => {
+                await sleepPromise(10);
+                realClearTimeout(handler);
+            });
 
-            expect(listener).toHaveBeenCalledTimes(1);
-            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(1);
-            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[3], true);
+            try {
+                await consumer.listen(listener);
+                const { consumePromise, rabbitMessages } = processGeneratedMessages(channel, 4);
+                await consumePromise;
+
+                expect(listener).toHaveBeenCalledTimes(1);
+                expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(1);
+                expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[3], true);
+            } finally {
+                clearTimeoutMock.mockRestore();
+            }
         });
 
         it('should process individual batches when maxWaitTimeForBatch=0 and there is delay', async () => {
@@ -198,19 +251,6 @@ describe('Batch consumer', () => {
             expect(listener).toHaveBeenCalledTimes(3);
         });
 
-        it('should close channel when consumer is canceled via null message', async () => {
-            const listener = vi.fn().mockResolvedValue(undefined);
-            await consumer.listen(listener);
-
-            const handler = channel.nativeChannel.consume.mock.lastCall![1];
-            await handler(null);
-
-            expect(channel.close).toHaveBeenCalledTimes(1);
-            expect(listener).not.toHaveBeenCalled();
-            expect(channel.nativeChannel.ack).not.toHaveBeenCalled();
-            expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
-        });
-
         it('should process partial batch', async () => {
             vitest.useFakeTimers();
             const consumer = new BatchConsumerImplementation(
@@ -218,7 +258,7 @@ describe('Batch consumer', () => {
                 new TestQueue(),
                 {
                     batchSize: 5,
-                    maxWaitTimeForAck: 400,
+                    maxWaitTimeForBatch: 400,
                 },
             );
             const listener = vi.fn().mockImplementation(
@@ -227,19 +267,30 @@ describe('Batch consumer', () => {
 
             await consumer.listen(listener);
             const { consumePromise, rabbitMessages, messagesContent } = processGeneratedMessages(channel, 8);
-            await consumePromise;
 
-            // wait for acknowledge to fire
-            await vitest.advanceTimersByTimeAsync(800);
-
-            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(2);
+            // acknowledge first promise
+            await vitest.advanceTimersByTimeAsync(200);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(1);
             expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
+
+            // acknowledge second batch
+            await vitest.advanceTimersByTimeAsync(400);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(2);
             expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[7], true);
+
+            await consumePromise;
 
             expect(listener).toHaveBeenCalledTimes(2);
             expect(listener).toHaveBeenCalledWith({
                 channel,
                 messages: zip(messagesContent.slice(0, 5), rabbitMessages.slice(0, 5)).map(([message, rabbitMessage]) => ({
+                    message,
+                    rabbitMessage,
+                })),
+            });
+            expect(listener).toHaveBeenCalledWith({
+                channel,
+                messages: zip(messagesContent.slice(5, 8), rabbitMessages.slice(5, 8)).map(([message, rabbitMessage]) => ({
                     message,
                     rabbitMessage,
                 })),
@@ -252,7 +303,6 @@ describe('Batch consumer', () => {
             ['zero', 0],
             ['negative', -3],
         ])('should send the confirmation message immediately when wait time for ack is %s', async (_, waitTime) => {
-            const sleepMs = 500;
             vitest.useFakeTimers();
             const consumer = new BatchConsumerImplementation(
                 channel,
@@ -263,15 +313,17 @@ describe('Batch consumer', () => {
                 },
             );
             const listener = vi.fn()
-                .mockImplementationOnce(() => sleepPromise(sleepMs))
+                .mockImplementationOnce(() => sleepPromise(500))
                 .mockImplementation(
                     () => Promise.resolve(),
                 );
 
             await consumer.listen(listener);
             const { rabbitMessages, messagesContent, consumePromise } = processGeneratedMessages(channel, 10);
-            await vitest.advanceTimersByTimeAsync(sleepMs/2);
-            await vitest.advanceTimersByTimeAsync(sleepMs);
+            await vitest.advanceTimersByTimeAsync(100);
+            // now second batch has been processed
+            await vitest.advanceTimersByTimeAsync(500);
+            // now the first batch has been processed
             await consumePromise;
 
             // separately second batch and then first batch as a whole
@@ -365,30 +417,29 @@ describe('Batch consumer', () => {
 
         it('should wait for the delayed batch and send single confirmation message', async () => {
             vitest.useFakeTimers();
-            const sleepTime = 500;
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
                     batchSize: 5,
-                    maxWaitTimeForAck: sleepTime * 2,
+                    maxWaitTimeForAck: 1000,
                 },
             );
             const listener = vi.fn()
-                .mockImplementationOnce(() => sleepPromise(sleepTime))
+                .mockImplementationOnce(() => sleepPromise(500))
                 .mockImplementation(
                     () => Promise.resolve(),
                 );
 
             await consumer.listen(listener);
             const { rabbitMessages, messagesContent, consumePromise } = processGeneratedMessages(channel, 10);
-            await vitest.advanceTimersByTimeAsync(sleepTime / 2);
-            // here is second batch waiting
-            await vitest.advanceTimersByTimeAsync(sleepTime);
+            await vitest.advanceTimersByTimeAsync(100);
+            // now the second batch is waiting
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(0);
+            await vitest.advanceTimersByTimeAsync(500);
             // now single confirmation for second batch should fire
             await consumePromise;
 
-            // separately second batch and then first batch as a whole
             expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(1);
             const ackCalls = channel.nativeChannel.ack.mock.calls;
             expect(ackCalls).toEqual([
@@ -416,14 +467,14 @@ describe('Batch consumer', () => {
         });
     });
 
-    describe('processing failure with rejection batch failure strategy', () => {
+    describe('processing failure with fail batch failure strategy', () => {
         it('should reject messages', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
                     batchSize: 5,
-                    batchFailureStrategy: BatchFailureStrategy.Reject,
+                    batchFailureStrategy: BatchFailureStrategy.Fail,
                     failureStrategy: ConsumptionFailureStrategy.Reject,
                 },
             );
@@ -446,7 +497,7 @@ describe('Batch consumer', () => {
                 new TestQueue(),
                 {
                     batchSize: 5,
-                    batchFailureStrategy: BatchFailureStrategy.Reject,
+                    batchFailureStrategy: BatchFailureStrategy.Fail,
                     failureStrategy: ConsumptionFailureStrategy.Reject,
                 },
             );
@@ -456,16 +507,56 @@ describe('Batch consumer', () => {
 
             await consumer.listen(listener);
             const { rabbitMessages, consumePromise } = processGeneratedMessages(channel, 10);
-            await vitest.advanceTimersByTimeAsync(500);
-            await consumePromise;
-
-
+            await vitest.advanceTimersByTimeAsync(100);
+            // second batch is done and should reject immediately
             expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(5);
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[5], false, false);
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[6], false, false);
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[7], false, false);
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[8], false, false);
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[9], false, false);
+            // finish first batch
+            await vitest.advanceTimersByTimeAsync(500);
+            await consumePromise;
+
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
+        });
+
+        it('should reject the messages individually and then in batch', async () => {
+            vitest.useFakeTimers();
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    batchFailureStrategy: BatchFailureStrategy.Fail,
+                    failureStrategy: ConsumptionFailureStrategy.Reject,
+                },
+            );
+            const listener = vi.fn()
+                .mockImplementationOnce(async () => {
+                    await sleepPromise(500);
+                    throw new Error('Delayed testing error');
+                })
+                .mockImplementation(() => Promise.reject(new Error('Testing rejection')));
+
+            await consumer.listen(listener);
+            const { rabbitMessages, consumePromise } = processGeneratedMessages(channel, 10);
+            await vitest.advanceTimersByTimeAsync(100);
+            // second batch is done and should reject immediately
+            expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(5);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[5], false, false);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[6], false, false);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[7], false, false);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[8], false, false);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[9], false, false);
+            // finish first batch
+            await vitest.advanceTimersByTimeAsync(500);
+            await consumePromise;
+
+            expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(6);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[4], true, false);
         });
 
         it('should requeue the messages', async () => {
@@ -474,7 +565,7 @@ describe('Batch consumer', () => {
                 new TestQueue(),
                 {
                     batchSize: 5,
-                    batchFailureStrategy: BatchFailureStrategy.Reject,
+                    batchFailureStrategy: BatchFailureStrategy.Fail,
                     failureStrategy: ConsumptionFailureStrategy.Requeue,
                 },
             );
@@ -497,7 +588,7 @@ describe('Batch consumer', () => {
                 new TestQueue(),
                 {
                     batchSize: 5,
-                    batchFailureStrategy: BatchFailureStrategy.Reject,
+                    batchFailureStrategy: BatchFailureStrategy.Fail,
                     failureStrategy: ConsumptionFailureStrategy.Requeue,
                 },
             );
@@ -507,15 +598,56 @@ describe('Batch consumer', () => {
 
             await consumer.listen(listener);
             const { rabbitMessages, consumePromise } = processGeneratedMessages(channel, 10);
-            await vitest.advanceTimersByTimeAsync(500);
-            await consumePromise;
-
+            await vitest.advanceTimersByTimeAsync(100);
+            // second batch is done and should requeue immediately
             expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(5);
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[5], false, true);
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[6], false, true);
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[7], false, true);
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[8], false, true);
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[9], false, true);
+            // finish first batch
+            await vitest.advanceTimersByTimeAsync(500);
+            await consumePromise;
+
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
+        });
+
+        it('should requeue the messages individually and then in batch', async () => {
+            vitest.useFakeTimers();
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    batchFailureStrategy: BatchFailureStrategy.Fail,
+                    failureStrategy: ConsumptionFailureStrategy.Requeue,
+                },
+            );
+            const listener = vi.fn()
+                .mockImplementationOnce(async () => {
+                    await sleepPromise(500);
+                    throw new Error('Delayed testing error');
+                })
+                .mockImplementation(() => Promise.reject(new Error('Testing rejection')));
+
+            await consumer.listen(listener);
+            const { rabbitMessages, consumePromise } = processGeneratedMessages(channel, 10);
+            await vitest.advanceTimersByTimeAsync(100);
+            // second batch is done and should requeue immediately
+            expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(5);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[5], false, true);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[6], false, true);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[7], false, true);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[8], false, true);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[9], false, true);
+            // finish first batch
+            await vitest.advanceTimersByTimeAsync(500);
+            await consumePromise;
+
+            expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(6);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[4], true, true);
         });
 
         it('should have auto acknowledge on when failure strategy is drop', async () => {
@@ -524,7 +656,7 @@ describe('Batch consumer', () => {
                 new TestQueue(),
                 {
                     batchSize: 5,
-                    batchFailureStrategy: BatchFailureStrategy.Reject,
+                    batchFailureStrategy: BatchFailureStrategy.Fail,
                     failureStrategy: ConsumptionFailureStrategy.Drop,
                 },
             );
@@ -537,6 +669,55 @@ describe('Batch consumer', () => {
 
             expect(channel.nativeChannel.ack).not.toHaveBeenCalled();
             expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            ['zero', 0],
+            ['negative', -3],
+        ])('should have auto acknowledge on when failure strategy is drop and prefetch is %s', async (_, prefetch) => {
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    prefetch,
+                    batchSize: 5,
+                    batchFailureStrategy: BatchFailureStrategy.Fail,
+                    failureStrategy: ConsumptionFailureStrategy.Drop,
+                },
+            );
+            const listener = vi.fn()
+                .mockImplementation(() => Promise.reject(new Error('Testing rejection')));
+
+            await consumer.listen(listener);
+            const { consumePromise } = processGeneratedMessages(channel, 5);
+            await consumePromise;
+
+            expect(channel.nativeChannel.ack).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
+        });
+
+        it('should explicitly ack message when failure strategy is drop and prefetch is set', async () => {
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    prefetch: 10,
+                    batchSize: 5,
+                    batchFailureStrategy: BatchFailureStrategy.Fail,
+                    failureStrategy: ConsumptionFailureStrategy.Drop,
+                },
+            );
+            const listener = vi.fn()
+                .mockImplementation(() => Promise.reject(new Error('Testing rejection')));
+
+            await consumer.listen(listener);
+            const { consumePromise, rabbitMessages } = processGeneratedMessages(channel, 10);
+            await consumePromise;
+
+            expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(2);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[9], true);
         });
     });
 
@@ -569,6 +750,7 @@ describe('Batch consumer', () => {
         });
 
         it('after split it should respect acknowledgement delay', async () => {
+            vitest.useFakeTimers();
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -576,16 +758,22 @@ describe('Batch consumer', () => {
                     batchSize: 5,
                     batchFailureStrategy: BatchFailureStrategy.Split,
                     failureStrategy: ConsumptionFailureStrategy.Reject,
-                    maxWaitTimeForAck: 100,
+                    maxWaitTimeForAck: 1000,
                 },
             );
             const listener = vi.fn()
                 .mockImplementationOnce(() => Promise.reject(new Error('Testing split')))
-                .mockImplementationOnce(() => sleepPromise(50))
+                .mockImplementationOnce(() => sleepPromise(500))
                 .mockImplementation(() => Promise.resolve());
 
             await consumer.listen(listener);
             const { rabbitMessages, consumePromise } = processGeneratedMessages(channel, 5);
+            await vitest.advanceTimersByTimeAsync(100);
+            // batch rejected at this point and last 4 messages are waiting for the delayed one
+            expect(channel.nativeChannel.ack).not.toHaveBeenCalled();
+            await vitest.advanceTimersByTimeAsync(500);
+            // first message should now be resolved
+
             await consumePromise;
 
             expect(listener).toHaveBeenCalledTimes(6);
@@ -593,7 +781,7 @@ describe('Batch consumer', () => {
             expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
         });
 
-        it('should reprocess messages even when failure strategy is drop', async () => {
+        it('should reprocess messages even when failure strategy is drop and auto-acknowledgement is enabled', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
@@ -615,6 +803,34 @@ describe('Batch consumer', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(0);
         });
 
+        it('should reprocess and acknowledge messages even when failure strategy is drop and auto-acknowledgement is disabled', async () => {
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    prefetch: 10,
+                    batchSize: 5,
+                    batchFailureStrategy: BatchFailureStrategy.Split,
+                    failureStrategy: ConsumptionFailureStrategy.Drop,
+                },
+            );
+            const listener = vi.fn()
+                .mockImplementation(() => Promise.reject(new Error('Testing split')));
+
+            await consumer.listen(listener);
+            const { consumePromise, rabbitMessages } = processGeneratedMessages(channel, 5);
+            await consumePromise;
+
+            expect(listener).toHaveBeenCalledTimes(6);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(5);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[0], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[1], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[2], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[3], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(0);
+        });
+
         it('should handle each message individually for reject strategy', async () => {
             const consumer = new BatchConsumerImplementation(
                 channel,
@@ -626,10 +842,12 @@ describe('Batch consumer', () => {
                 },
             );
             const listener = vi.fn()
+                // for batch
                 .mockImplementationOnce(() => Promise.reject(new Error('Testing split')))
-                .mockImplementationOnce(() => Promise.reject(new Error('Testing split')))
+                // for messages
+                .mockImplementationOnce(() => Promise.reject(new Error('Testing error for message')))
                 .mockImplementationOnce(() => Promise.resolve())
-                .mockImplementationOnce(() => Promise.reject(new Error('Testing split')))
+                .mockImplementationOnce(() => Promise.reject(new Error('Testing error for message')))
                 .mockImplementationOnce(() => Promise.resolve())
                 .mockImplementationOnce(() => Promise.resolve());
 
@@ -650,10 +868,54 @@ describe('Batch consumer', () => {
 
             const nackCallOrder = channel.nativeChannel.nack.mock.invocationCallOrder;
             const ackCallOrder = channel.nativeChannel.ack.mock.invocationCallOrder;
-            expect(ackCallOrder).toHaveLength(1);
-            expect(nackCallOrder).toHaveLength(2);
+            // nack first, nack third, ack fifth
             expect(nackCallOrder[0]).toBeLessThan(nackCallOrder[1] as number);
             expect(nackCallOrder[1]).toBeLessThan(ackCallOrder[0] as number);
+        });
+
+        it('should handle each message individually for reject strategy with delayed message', async () => {
+            vitest.useFakeTimers();
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    batchFailureStrategy: BatchFailureStrategy.Split,
+                    failureStrategy: ConsumptionFailureStrategy.Reject,
+                    maxWaitTimeForAck: 1000,
+                },
+            );
+            const listener = vi.fn()
+                // for batch
+                .mockImplementationOnce(() => Promise.reject(new Error('Testing split')))
+                // for messages
+                .mockImplementationOnce(() => Promise.reject(new Error('Testing error for message')))
+                .mockImplementationOnce(() => Promise.resolve())
+                .mockImplementationOnce(() => Promise.reject(new Error('Testing error for message')))
+                .mockImplementationOnce(() => sleepPromise(500))
+                .mockImplementationOnce(() => Promise.resolve());
+
+            await consumer.listen(listener);
+            const { rabbitMessages, consumePromise } = processGeneratedMessages(channel, 5);
+
+            await vitest.advanceTimersByTimeAsync(100);
+            // now messages should be rejected, first message acknowledged, and last one waitinf ro fourth
+            expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(2);
+            expect(channel.nativeChannel.nack.mock.calls).toEqual([
+                [rabbitMessages[0], true, false],
+                [rabbitMessages[2], false, false],
+            ]);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[1], true);
+
+            await vitest.advanceTimersByTimeAsync(500);
+            // fourth message should be resolved
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(2);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
+
+            await consumePromise;
+
+            expect(listener).toHaveBeenCalledTimes(6);
         });
 
         it('should handle each message individually for requeue strategy', async () => {
@@ -667,7 +929,9 @@ describe('Batch consumer', () => {
                 },
             );
             const listener = vi.fn()
+                // for batch
                 .mockImplementationOnce(() => Promise.reject(new Error('Testing split')))
+                // for messages
                 .mockImplementationOnce(() => Promise.reject(new Error('Testing split')))
                 .mockImplementationOnce(() => Promise.resolve())
                 .mockImplementationOnce(() => Promise.reject(new Error('Testing split')))
@@ -691,10 +955,54 @@ describe('Batch consumer', () => {
 
             const nackCallOrder = channel.nativeChannel.nack.mock.invocationCallOrder;
             const ackCallOrder = channel.nativeChannel.ack.mock.invocationCallOrder;
-            expect(ackCallOrder).toHaveLength(1);
-            expect(nackCallOrder).toHaveLength(2);
+            // nack first, nack third, ack fifth
             expect(nackCallOrder[0]).toBeLessThan(nackCallOrder[1] as number);
             expect(nackCallOrder[1]).toBeLessThan(ackCallOrder[0] as number);
+        });
+
+        it('should handle each message individually for requeue strategy with delayed message', async () => {
+            vitest.useFakeTimers();
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    batchFailureStrategy: BatchFailureStrategy.Split,
+                    failureStrategy: ConsumptionFailureStrategy.Requeue,
+                    maxWaitTimeForAck: 1000,
+                },
+            );
+            const listener = vi.fn()
+                // for batch
+                .mockImplementationOnce(() => Promise.reject(new Error('Testing split')))
+                // for messages
+                .mockImplementationOnce(() => Promise.reject(new Error('Testing error for message')))
+                .mockImplementationOnce(() => Promise.resolve())
+                .mockImplementationOnce(() => Promise.reject(new Error('Testing error for message')))
+                .mockImplementationOnce(() => sleepPromise(500))
+                .mockImplementationOnce(() => Promise.resolve());
+
+            await consumer.listen(listener);
+            const { rabbitMessages, consumePromise } = processGeneratedMessages(channel, 5);
+
+            await vitest.advanceTimersByTimeAsync(100);
+            // now messages should be rejected, first message acknowledged, and last one waitinf ro fourth
+            expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(2);
+            expect(channel.nativeChannel.nack.mock.calls).toEqual([
+                [rabbitMessages[0], true, true],
+                [rabbitMessages[2], false, true],
+            ]);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[1], true);
+
+            await vitest.advanceTimersByTimeAsync(500);
+            // fourth message should be resolved
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(2);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
+
+            await consumePromise;
+
+            expect(listener).toHaveBeenCalledTimes(6);
         });
     });
 
@@ -715,15 +1023,15 @@ describe('Batch consumer', () => {
 
             await consumer.listen(listener);
 
-            let errorMsg: Error | undefined;
+            let err: Error | undefined;
             consumer.on('error', error => {
-                errorMsg = error;
+                err = error;
             });
 
             const { consumePromise } = processGeneratedMessages(channel, 5);
 
             await expect(consumePromise).rejects.toThrow(`Not supported batch failure strategy: invalid`);
-            expect(errorMsg?.message).toEqual('Not supported batch failure strategy: invalid');
+            expect(err?.message).toEqual('Not supported batch failure strategy: invalid');
         });
 
         it('should throw error when invalid failure strategy is used with reject batch failure', async () => {
@@ -732,7 +1040,7 @@ describe('Batch consumer', () => {
                 new TestQueue(),
                 {
                     batchSize: 5,
-                    batchFailureStrategy: BatchFailureStrategy.Reject,
+                    batchFailureStrategy: BatchFailureStrategy.Fail,
                     // @ts-expect-error Invalid failure strategy for test purpose
                     failureStrategy: 'invalid',
                 },
@@ -742,15 +1050,15 @@ describe('Batch consumer', () => {
 
             await consumer.listen(listener);
 
-            let errorMsg: Error | undefined;
+            let err: Error | undefined;
             consumer.on('error', error => {
-                errorMsg = error;
+                err = error;
             });
 
             const { consumePromise } = processGeneratedMessages(channel, 5);
 
             await expect(consumePromise).rejects.toThrow(`Not supported failure strategy: invalid`);
-            expect(errorMsg?.message).toEqual('Not supported failure strategy: invalid');
+            expect(err?.message).toEqual('Not supported failure strategy: invalid');
         });
 
         it('should throw error when invalid failure strategy is used with split batch failure', async () => {
@@ -769,23 +1077,26 @@ describe('Batch consumer', () => {
 
             await consumer.listen(listener);
 
-            let errorMsg: Error | undefined;
+            let err: Error | undefined;
             consumer.on('error', error => {
-                errorMsg = error;
+                err = error;
             });
 
             const { consumePromise } = processGeneratedMessages(channel, 5);
 
             await expect(consumePromise).rejects.toThrow('Not supported failure strategy: invalid');
-            expect(errorMsg?.message).toEqual('Not supported failure strategy: invalid');
+            expect(err?.message).toEqual('Not supported failure strategy: invalid');
         });
 
-        it('should not allow split batch failure strategy with batch size of 1', () => {
+        it.each([
+            [0],
+            [1],
+        ])('should not allow split batch failure strategy with batch size of %d', batchSize => {
             expect(() => new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
-                    batchSize: 1,
+                    batchSize: batchSize,
                     batchFailureStrategy: BatchFailureStrategy.Split,
                 },
             )).toThrow('Cannot have split batch failure strategy when batch size is 1');
@@ -802,6 +1113,57 @@ describe('Batch consumer', () => {
     });
 
     describe('channel close', () => {
+        it('should try to reconnect after channel close', async () => {
+            vitest.useFakeTimers();
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 20,
+                    batchFailureStrategy: BatchFailureStrategy.Split,
+                },
+            );
+            const listener = vi.fn();
+
+            await consumer.listen(listener);
+
+            channel.emit('close');
+            await vitest.advanceTimersByTimeAsync(1000);
+
+            expect(channel.nativeChannel.consume).toHaveBeenCalledTimes(2);
+        });
+
+        it('should close when reconnect encounter error', async () => {
+            vitest.useFakeTimers();
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 20,
+                    batchFailureStrategy: BatchFailureStrategy.Split,
+                },
+            );
+            const listener = vi.fn();
+
+            const closeListener = vi.fn();
+            consumer.on('close', closeListener);
+            const reconnectErrorListener = vi.fn();
+            consumer.on('reconnectError', reconnectErrorListener);
+
+            channel.nativeChannel.prefetch
+                .mockImplementationOnce(() => Promise.resolve())
+                .mockImplementationOnce(() => Promise.reject(new Error('prefetch failure')));
+
+            await consumer.listen(listener);
+            await vitest.advanceTimersByTimeAsync(100);
+
+            channel.emit('close');
+            await vitest.advanceTimersByTimeAsync(1000);
+
+            expect(channel.nativeChannel.consume).toHaveBeenCalledTimes(1);
+            expect(reconnectErrorListener).toHaveBeenCalledTimes(1);
+        });
+
         it('should not send ack nor nock even if processing is successful', async () => {
             vitest.useFakeTimers();
             const listener = vi.fn().mockImplementation(
@@ -877,12 +1239,15 @@ describe('Batch consumer', () => {
                     batchFailureStrategy: BatchFailureStrategy.Split,
                 },
             );
+
+            let shouldFail = true;
             const listener = vi.fn()
                 .mockImplementationOnce(() => Promise.reject(new Error('Test failure')))
                 .mockImplementation(async () => {
                     await sleepPromise(500);
-                    if (Math.random() < 0.5)
+                    if (shouldFail)
                         throw new Error('Test failure');
+                    shouldFail = !shouldFail;
                 });
 
             await consumer.listen(listener);
@@ -901,23 +1266,22 @@ describe('Batch consumer', () => {
             vitest.useFakeTimers();
             const consumer = new BatchConsumerImplementation(channel, new TestQueue(), {
                 batchSize: 5,
-                maxWaitTimeForBatch: 100,
+                maxWaitTimeForBatch: 1000,
             });
             const listener = vi.fn().mockResolvedValue(undefined);
 
             await consumer.listen(listener);
 
             const { consumePromise: cp1 } = processGeneratedMessages(channel, 3);
-            await cp1;
 
             channel.emit('close');
 
-            await vitest.advanceTimersByTimeAsync(500);
-
+            await vitest.advanceTimersByTimeAsync(2000);
+            await cp1;
             expect(listener).not.toHaveBeenCalled();
 
             const { consumePromise: cp2, rabbitMessages } = processGeneratedMessages(channel, 5);
-            await vitest.advanceTimersByTimeAsync(0);
+            await vitest.advanceTimersByTimeAsync(1000);
             await cp2;
 
             expect(channel.nativeChannel.consume).toHaveBeenCalledTimes(2);
@@ -931,7 +1295,7 @@ describe('Batch consumer', () => {
             vitest.useFakeTimers();
             const consumer = new BatchConsumerImplementation(channel, new TestQueue(), {
                 batchSize: 5,
-                maxWaitTimeForAck: 200,
+                maxWaitTimeForAck: 500,
             });
             const listener = vi.fn()
                 .mockImplementationOnce(() => sleepPromise(1000))
@@ -940,37 +1304,20 @@ describe('Batch consumer', () => {
             await consumer.listen(listener);
             const { consumePromise } = processGeneratedMessages(channel, 10);
 
-            await vitest.advanceTimersByTimeAsync(50);
+            await vitest.advanceTimersByTimeAsync(200);
+            // second batch processed and waiting, first batch processing
 
             channel.emit('close');
 
-            await vitest.advanceTimersByTimeAsync(250);
-            await vitest.advanceTimersByTimeAsync(1000);
+            await vitest.advanceTimersByTimeAsync(2000);
+            // both batch processed
             await consumePromise;
 
+            // as second batch was waiting and disconnected during waiting,
+            // no ack nor nack should be called
             expect(channel.nativeChannel.ack).not.toHaveBeenCalled();
             expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
             expect(listener).toHaveBeenCalledTimes(2);
-        });
-
-        it('should try to reconnect after channel close', async () => {
-            vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
-                channel,
-                new TestQueue(),
-                {
-                    batchSize: 20,
-                    batchFailureStrategy: BatchFailureStrategy.Split,
-                },
-            );
-            const listener = vi.fn();
-
-            await consumer.listen(listener);
-
-            channel.emit('close');
-            await vitest.advanceTimersByTimeAsync(1000);
-
-            expect(channel.nativeChannel.consume).toHaveBeenCalledTimes(2);
         });
     });
 
@@ -982,15 +1329,18 @@ describe('Batch consumer', () => {
             );
 
             await consumer.listen(listener);
-            const { consumePromise } = processGeneratedMessages(channel, 15);
+            const { consumePromise, rabbitMessages } = processGeneratedMessages(channel, 15);
 
             await vitest.advanceTimersByTimeAsync(100);
             const closePromise = consumer.close();
             await vitest.advanceTimersByTimeAsync(1000);
-            await closePromise;
-            await consumePromise;
 
-            expect(channel.nativeChannel.ack).toHaveBeenCalled();
+            await consumePromise;
+            await closePromise;
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(3);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[9], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[14], true);
         });
 
         it('should wait for reject of batches', async () => {
@@ -1002,7 +1352,7 @@ describe('Batch consumer', () => {
                 });
 
             await consumer.listen(listener);
-            const { consumePromise } = processGeneratedMessages(channel, 15);
+            const { consumePromise, rabbitMessages } = processGeneratedMessages(channel, 15);
 
             await vitest.advanceTimersByTimeAsync(100);
             const closePromise = consumer.close();
@@ -1010,7 +1360,10 @@ describe('Batch consumer', () => {
             await closePromise;
             await consumePromise;
 
-            expect(channel.nativeChannel.nack).toHaveBeenCalled();
+            expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(3);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[4], true, false);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[9], true, false);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[14], true, false);
         });
 
         it('should wait for ack of messages after split', async () => {
@@ -1023,25 +1376,74 @@ describe('Batch consumer', () => {
                     batchFailureStrategy: BatchFailureStrategy.Split,
                 },
             );
+
+            const closeListener = vitest.fn();
+            consumer.on('close', closeListener);
+
             const listener = vi.fn()
                 .mockImplementationOnce(async () => {
                     await sleepPromise(500);
                     throw new Error('Testing error');
                 })
                 .mockImplementation(async () => {
-                    await sleepPromise(500);
+                    await sleepPromise(200);
                 });
 
             await consumer.listen(listener);
-            const { consumePromise } = processGeneratedMessages(channel, 15);
+            const { consumePromise, rabbitMessages } = processGeneratedMessages(channel, 15);
 
             await vitest.advanceTimersByTimeAsync(100);
             const closePromise = consumer.close();
-            await vitest.advanceTimersByTimeAsync(2000);
+
+            await vitest.advanceTimersByTimeAsync(200);
+            // second and third batch processed
+            expect(closeListener).not.toHaveBeenCalled();
+            expect(listener).toHaveBeenCalledTimes(3);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(10);
+            expect(channel.nativeChannel.ack.mock.calls).toEqual([
+                [rabbitMessages[5], false],
+                [rabbitMessages[6], false],
+                [rabbitMessages[7], false],
+                [rabbitMessages[8], false],
+                [rabbitMessages[9], false],
+                [rabbitMessages[10], false],
+                [rabbitMessages[11], false],
+                [rabbitMessages[12], false],
+                [rabbitMessages[13], false],
+                [rabbitMessages[14], false],
+            ]);
+
+            await vitest.advanceTimersByTimeAsync(300);
+            // first batch failed
+            expect(closeListener).not.toHaveBeenCalled();
+            expect(listener).toHaveBeenCalledTimes(8);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(10);
+
+            await vitest.advanceTimersByTimeAsync(1000);
+            // first (now splitted) batch success
+            expect(closeListener).toHaveBeenCalled();
+            expect(listener).toHaveBeenCalledTimes(8);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(15);
+            expect(channel.nativeChannel.ack.mock.calls).toEqual([
+                [rabbitMessages[5], false],
+                [rabbitMessages[6], false],
+                [rabbitMessages[7], false],
+                [rabbitMessages[8], false],
+                [rabbitMessages[9], false],
+                [rabbitMessages[10], false],
+                [rabbitMessages[11], false],
+                [rabbitMessages[12], false],
+                [rabbitMessages[13], false],
+                [rabbitMessages[14], false],
+                [rabbitMessages[0], true],
+                [rabbitMessages[1], true],
+                [rabbitMessages[2], true],
+                [rabbitMessages[3], true],
+                [rabbitMessages[4], true],
+            ]);
+
             await closePromise;
             await consumePromise;
-
-            expect(channel.nativeChannel.ack).toHaveBeenCalled();
         });
 
         it('should wait for nack of messages after split', async () => {
@@ -1054,6 +1456,10 @@ describe('Batch consumer', () => {
                     batchFailureStrategy: BatchFailureStrategy.Split,
                 },
             );
+
+            const closeListener = vitest.fn();
+            consumer.on('close', closeListener);
+
             const listener = vi.fn()
                 .mockImplementation(async () => {
                     await sleepPromise(500);
@@ -1065,14 +1471,25 @@ describe('Batch consumer', () => {
 
             await vitest.advanceTimersByTimeAsync(100);
             const closePromise = consumer.close();
-            await vitest.advanceTimersByTimeAsync(2000);
+
+            await vitest.advanceTimersByTimeAsync(500);
+            // all 3 batches failed, split into individual messages
+            expect(closeListener).not.toHaveBeenCalled();
+            expect(listener).toHaveBeenCalledTimes(3+15);
+            expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(0);
+
+            await vitest.advanceTimersByTimeAsync(500);
+            // all individual messages failed and nacked
+            expect(closeListener).toHaveBeenCalled();
+            expect(listener).toHaveBeenCalledTimes(18);
+            expect(channel.nativeChannel.ack).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.nack).toHaveBeenCalledTimes(15);
+
             await closePromise;
             await consumePromise;
-
-            expect(channel.nativeChannel.nack).toHaveBeenCalled();
         });
 
-        it('should handle close timeout', async () => {
+        it('should handle close timeout with error', async () => {
             vitest.useFakeTimers();
             const listener = vi.fn()
                 .mockImplementation(async () => {
@@ -1089,21 +1506,23 @@ describe('Batch consumer', () => {
             await closeExpectation;
 
             await consumePromise;
+
+            expect(channel.nativeChannel.ack).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
         });
     });
 
     describe('parse failure', () => {
         it('should nack batch when parse fails and failureStrategy is Reject', async () => {
-            const parseError = new Error('parse failure');
             const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
                 channel,
                 new TestQueue(),
                 {
                     batchSize: 5,
-                    batchFailureStrategy: BatchFailureStrategy.Reject,
+                    batchFailureStrategy: BatchFailureStrategy.Fail,
                     failureStrategy: ConsumptionFailureStrategy.Reject,
                     parseMessageFn: () => {
-                        throw parseError;
+                        throw new Error('parse failure');
                     },
                 },
             );
@@ -1117,16 +1536,15 @@ describe('Batch consumer', () => {
         });
 
         it('should requeue batch when parse fails and failureStrategy is Requeue', async () => {
-            const parseError = new Error('parse failure');
             const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
                 channel,
                 new TestQueue(),
                 {
                     batchSize: 5,
-                    batchFailureStrategy: BatchFailureStrategy.Reject,
+                    batchFailureStrategy: BatchFailureStrategy.Fail,
                     failureStrategy: ConsumptionFailureStrategy.Requeue,
                     parseMessageFn: () => {
-                        throw parseError;
+                        throw new Error('parse failure');
                     },
                 },
             );
@@ -1139,17 +1557,40 @@ describe('Batch consumer', () => {
             expect(channel.nativeChannel.nack).toHaveBeenCalledWith(rabbitMessages[4], true, true);
         });
 
-        it('should not ack or nack when parse fails and failureStrategy is Drop', async () => {
-            const parseError = new Error('parse failure');
+        it('should ack when parse fails and failureStrategy is Drop with prefetch', async () => {
             const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
                 channel,
                 new TestQueue(),
                 {
                     batchSize: 5,
-                    batchFailureStrategy: BatchFailureStrategy.Reject,
+                    prefetch: 20,
+                    batchFailureStrategy: BatchFailureStrategy.Fail,
                     failureStrategy: ConsumptionFailureStrategy.Drop,
                     parseMessageFn: () => {
-                        throw parseError;
+                        throw new Error('parse failure');
+                    },
+                },
+            );
+
+            await consumerWithBadParser.listen(vi.fn());
+            const { consumePromise, rabbitMessages } = processGeneratedMessages(channel, 5);
+            await consumePromise;
+
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
+            expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
+        });
+
+        it('should not ack or nack when parse fails and failureStrategy is Drop with no prefetch', async () => {
+            const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    batchFailureStrategy: BatchFailureStrategy.Fail,
+                    failureStrategy: ConsumptionFailureStrategy.Drop,
+                    parseMessageFn: () => {
+                        throw new Error('parse failure');
                     },
                 },
             );
@@ -1208,6 +1649,7 @@ describe('Batch consumer', () => {
         });
 
         it('close() should resolve after async parse failure', async () => {
+            vitest.useFakeTimers();
             const parseError = new Error('parse failure');
             const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
                 channel,
@@ -1215,18 +1657,30 @@ describe('Batch consumer', () => {
                 {
                     batchSize: 5,
                     parseMessageFn: async () => {
-                        await sleepPromise(250);
+                        await sleepPromise(500);
                         throw parseError;
                     },
                 },
             );
 
+            const closeListener = vitest.fn();
+            consumerWithBadParser.on('close', closeListener);
+
             await consumerWithBadParser.listen(vi.fn());
             const { consumePromise } = processGeneratedMessages(channel, 5);
-            const closePromise = consumerWithBadParser.close(500);
-            await consumePromise;
 
-            await expect(closePromise).resolves.toBeUndefined();
+            await vitest.advanceTimersByTimeAsync(100);
+            const closePromise = consumerWithBadParser.close(500);
+            expect(closeListener).not.toHaveBeenCalled();
+
+            await vitest.advanceTimersByTime(200);
+            expect(closeListener).not.toHaveBeenCalled();
+
+            await vitest.advanceTimersByTimeAsync(500);
+            expect(closeListener).toHaveBeenCalled();
+
+            await closePromise;
+            await consumePromise;
         });
 
         it('should nack only failing message when split strategy and one message has bad content', async () => {
@@ -1276,7 +1730,7 @@ describe('Batch consumer', () => {
                 channel,
                 new TestQueue(),
                 {
-                    batchSize: 4,
+                    batchSize: 10,
                     batchFailureStrategy: BatchFailureStrategy.Split,
                     failureStrategy: ConsumptionFailureStrategy.Reject,
                     maxWaitTimeForAck: 0,
@@ -1288,11 +1742,20 @@ describe('Batch consumer', () => {
                 .mockResolvedValue(undefined);
 
             await consumer.listen(listener);
-            const { rabbitMessages, consumePromise } = processGeneratedMessages(channel, 4);
+            const { rabbitMessages, consumePromise } = processGeneratedMessages(channel, 10);
             await consumePromise;
 
-            expect(channel.nativeChannel.ack).toHaveBeenCalled();
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(10);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[0], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[1], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[2], true);
             expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[3], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[5], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[6], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[7], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[8], true);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[9], true);
         });
     });
 });
