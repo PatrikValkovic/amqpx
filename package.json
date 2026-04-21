@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "description": "Wrapper around amqplib with retries, topology, batching, and validation",
   "homepage": "https://patrikvalkovic.github.io/amqpx/",
-  "main": "dist/index.js",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/cjs/index.d.ts",
   "scripts": {
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --project tsconfig.test.json",
@@ -11,7 +13,9 @@
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "test:integration:coverage": "vitest run --config vitest.integration.config.mts --coverage",
-    "build": "rimraf dist && tsc --project tsconfig.json --removeComments &&  tsc --project tsconfig.json  --declaration --emitDeclarationOnly",
+    "build:cjs": "tsc --project tsconfig.cjs.json --removeComments && tsc --project tsconfig.cjs.json --declaration --emitDeclarationOnly && node -e \"require('fs').writeFileSync('dist/cjs/package.json', JSON.stringify({type:'commonjs'}))\"",
+    "build:esm": "tsc --project tsconfig.esm.json --removeComments && tsc --project tsconfig.esm.json --declaration --emitDeclarationOnly && node -e \"require('fs').writeFileSync('dist/esm/package.json', JSON.stringify({type:'module'}))\"",
+    "build": "rimraf dist && npm run build:cjs && npm run build:esm",
     "doc:dev": "vitepress dev doc",
     "doc:build": "vitepress build doc"
   },
@@ -23,10 +27,46 @@
     "dist"
   ],
   "exports": {
-    ".": "./dist/index.js",
-    "./jest": "./dist/extensions/jest/index.js",
-    "./vitest": "./dist/extensions/vitest/index.js",
-    "./zod": "./dist/extensions/zod/index.js"
+    ".": {
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      },
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      }
+    },
+    "./jest": {
+      "require": {
+        "types": "./dist/cjs/extensions/jest/index.d.ts",
+        "default": "./dist/cjs/extensions/jest/index.js"
+      },
+      "import": {
+        "types": "./dist/esm/extensions/jest/index.d.ts",
+        "default": "./dist/esm/extensions/jest/index.js"
+      }
+    },
+    "./vitest": {
+      "require": {
+        "types": "./dist/cjs/extensions/vitest/index.d.ts",
+        "default": "./dist/cjs/extensions/vitest/index.js"
+      },
+      "import": {
+        "types": "./dist/esm/extensions/vitest/index.d.ts",
+        "default": "./dist/esm/extensions/vitest/index.js"
+      }
+    },
+    "./zod": {
+      "require": {
+        "types": "./dist/cjs/extensions/zod/index.d.ts",
+        "default": "./dist/cjs/extensions/zod/index.js"
+      },
+      "import": {
+        "types": "./dist/esm/extensions/zod/index.d.ts",
+        "default": "./dist/esm/extensions/zod/index.js"
+      }
+    }
   },
   "keywords": [
     "amqp",
