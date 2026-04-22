@@ -29,7 +29,7 @@ export class TestConnection extends EventEmitter implements Connection {
 
     connect = jest.fn().mockImplementation(() => Promise.resolve(this));
 
-    createChannel = jest.fn().mockImplementation(() => new TestChannel());
+    createChannel = jest.fn().mockImplementation(() => new TestChannel(this));
 
     createConsumerForExchange = jest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),

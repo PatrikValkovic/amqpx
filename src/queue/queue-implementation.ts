@@ -74,20 +74,20 @@ export class QueueImplementation implements Queue {
 
     createConsumer<T>(options: ConsumerOptions<T> = {}): Promise<Consumer<T>> {
         return Promise.resolve(
-            new ConsumerImplementation(options.channel ?? this.channel, this, options),
+            new ConsumerImplementation(options.channel ?? this.channel.connection.createChannel(), this, options),
         );
     }
 
     createBatchConsumer<T>(options: BatchConsumerOptions<T> = {}): Promise<BatchConsumer<T>> {
         return Promise.resolve(
-            new BatchConsumerImplementation(options.channel ?? this.channel, this, options),
+            new BatchConsumerImplementation(options.channel ?? this.channel.connection.createChannel(), this, options),
         );
     }
 
-    createProducer<T>(options: ProducerOptions<T> = {}) {
+    createProducer<T>(options: ProducerOptions<T> & { isConfirmed?: boolean } = {}) {
         const exchange = predefined.defaultExchange(this.channel);
         return Promise.resolve(
-            new ProducerImplementation(options.channel ?? this.channel, exchange, {
+            new ProducerImplementation(options.channel ?? this.channel.connection.createChannel(options.isConfirmed), exchange, {
                 ...options,
                 routingKey: () => this.name(),
             }),

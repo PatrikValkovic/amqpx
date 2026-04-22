@@ -22,8 +22,7 @@ export type ProducerOptions<T> = {
      */
     options?: amqp.Options.Publish;
     /**
-     * Channel to use for publishing. If `null`, the producer will use the channel
-     * provided by the exchange it is attached to.
+     * Channel to use for publishing. If `null`, the producer will create new channel.
      */
     channel?: Channel | null;
     /**

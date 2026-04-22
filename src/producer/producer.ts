@@ -26,14 +26,15 @@ export interface ProducerEventMap<WholeMessage> {
  * additional properties that can be added by the producer implementation.
  */
 export interface Producer<T, WholeMessage = T> extends EventEmitter<ProducerEventMap<WholeMessage>> {
+
+    close(): Promise<void>;
+
     /**
      * Publish message into the RabbitMQ.
      * @param message Message to publish. Producer implementation may add more properties into the message.
      * @param routingKey Either string of generator that accepts the message and returns its routing key.
      * @param options Publish options.
      */
-    close(): Promise<void>;
-
     publish(message: T, routingKey?: RoutingKeyGenerator<T>, options?: ProducerPublishOptions): Promise<WholeMessage>;
 
     get channel(): Channel;

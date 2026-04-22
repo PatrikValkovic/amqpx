@@ -33,26 +33,23 @@ export interface Queue {
 
     /**
      * Create consumer for current queue.
-     * Unless specified otherwise, uses the same channel as was used to declare the queue.
-     * This is generally not recommended, as each producer/consumer should have separate channels.
-     * Consider using `connection.createConsumerForQueue` method.
+     * By default, creates a new dedicated channel for the consumer.
+     * Pass a channel in `options` to use a specific one instead.
      */
     createConsumer<T>(options?: ConsumerOptions<T>): Promise<Consumer<T>>;
 
     /**
      * Create batch consumer for current queue.
-     * Unless specified otherwise, uses the same channel as was used to declare the queue.
-     * This is generally not recommended, as each producer/consumer should have separate channels.
-     * Consider using `connection.createBatchConsumerForQueue` method.
+     * By default, creates a new dedicated channel for the consumer.
+     * Pass a channel in `options` to use a specific one instead.
      */
     createBatchConsumer<T>(options?: BatchConsumerOptions<T>): Promise<BatchConsumer<T>>;
 
     /**
      * Create producer for current queue.
      * Publishes via the default RabbitMQ exchange, routing messages directly to this queue by name.
-     * Unless specified otherwise, uses the same channel as was used to declare the queue.
-     * This is generally not recommended, as each producer/consumer should have separate channels.
-     * Consider using `connection.createProducerForQueue` method.
+     * By default, creates a new dedicated channel for the producer.
+     * Pass a channel in `options` to use a specific one instead.
      */
     createProducer<T>(options?: ProducerOptions<T>): Promise<Producer<T>>;
 }

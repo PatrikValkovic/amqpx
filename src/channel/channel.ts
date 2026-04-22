@@ -3,10 +3,10 @@ import * as amqp from 'amqplib';
 import { Replies } from 'amqplib';
 import { Queue, QueueOptions } from '../queue';
 import { ExchangeTypes, Exchange } from '../exchange';
-import { Producer } from '../producer';
-import { ProducerOptions } from '../producer/types';
+import { Producer, ProducerOptions } from '../producer';
 import { ConsumerOptions, Consumer, BatchConsumerOptions, BatchConsumer } from '../consumer';
 import { ExchangeConsumerQueueOptions, ExchangeOptions } from '../exchange/types';
+import { Connection } from '../connection';
 import { ChannelPublishOptions } from './types';
 
 /**
@@ -28,6 +28,12 @@ export interface ChannelEventMap {
 }
 
 export interface Channel extends EventEmitter<ChannelEventMap> {
+
+    /**
+     * The {@link Connection} that owns this channel.
+     */
+    get connection(): Connection;
+
     /**
      * Open the underlying amqplib channel.
      * Must be called before any other operation.

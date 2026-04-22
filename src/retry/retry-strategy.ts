@@ -1,6 +1,8 @@
 import { TimeStrategy, linearBackoff } from './time-strategies';
 import { DEFAULT_RETRY_STRATEGY } from './default-retry-strategy';
 // Kept for JSDoc
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { retryStrategies } from './index';
 
 
 /**

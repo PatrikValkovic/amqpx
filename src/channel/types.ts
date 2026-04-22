@@ -1,5 +1,5 @@
 import * as amqp from 'amqplib';
-import { ProducerPublishOptions } from '../producer/types';
+import { ProducerPublishOptions } from '../producer';
 
 export type ChannelPublishOptions = ProducerPublishOptions & {
     drainTimeout: number;

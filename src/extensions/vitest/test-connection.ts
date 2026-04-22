@@ -29,7 +29,7 @@ export class TestConnection extends EventEmitter implements Connection {
 
     connect = vitest.fn().mockImplementation(() => Promise.resolve(this));
 
-    createChannel = vitest.fn().mockImplementation(() => new TestChannel());
+    createChannel = vitest.fn().mockImplementation(() => new TestChannel(this));
 
     createConsumerForExchange = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),

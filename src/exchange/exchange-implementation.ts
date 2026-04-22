@@ -158,9 +158,9 @@ export class ExchangeImplementation implements Exchange {
         return queue.createBatchConsumer(options);
     }
 
-    createProducer<T>(options: ProducerOptions<T> = {}): Promise<Producer<T>> {
+    createProducer<T>(options: ProducerOptions<T>  & { isConfirmed?: boolean } = {}): Promise<Producer<T>> {
         return Promise.resolve(
-            new ProducerImplementation(options.channel ?? this.channel, this, options),
+            new ProducerImplementation(options.channel ?? this.channel.connection.createChannel(options.isConfirmed), this, options),
         );
     }
 }

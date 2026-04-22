@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
-import { Channel } from '../../index';
-import { TestConsumer, TestBatchConsumer, TestExchange, TestProducer, TestQueue } from '.';
+import { Channel, Connection } from '../../index';
+import { TestConsumer, TestBatchConsumer, TestExchange, TestProducer, TestQueue, TestConnection } from '.';
 /**
  * Mock implementation of Channel using vitest mocks.
  *
@@ -25,9 +25,8 @@ import { TestConsumer, TestBatchConsumer, TestExchange, TestProducer, TestQueue 
  */
 export class TestChannel extends EventEmitter implements Channel {
 
-    constructor() {
+    constructor(public readonly connection: Connection = new TestConnection()) {
         super();
-        this.setMaxListeners(0);
     }
 
     connect = vitest.fn().mockImplementation(() => Promise.resolve(this));

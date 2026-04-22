@@ -23,7 +23,7 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
     private drainPromise: Promise<void> | null = null;
 
     constructor(
-        private readonly connection: Connection,
+        public readonly connection: Connection,
         publishConfirm: boolean,
     ) {
         super();

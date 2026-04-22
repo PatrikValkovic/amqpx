@@ -21,12 +21,12 @@ npm install --save-dev jest
 
 ## Entry points
 
-| Import path | Contents |
-|---|---|
-| `amqpx` | Core library — Connection, Channel, Exchange, Queue, Producer, Consumer |
-| `amqpx/vitest` | In-memory mock implementations for Vitest |
-| `amqpx/jest` | In-memory mock implementations for Jest |
-| `amqpx/zod` | ZodValidatedConsumer decorator |
+| Import path    | Contents                                                                |
+|----------------|-------------------------------------------------------------------------|
+| `amqpx`        | Core library — Connection, Channel, Exchange, Queue, Producer, Consumer |
+| `amqpx/vitest` | In-memory mock implementations for Vitest                               |
+| `amqpx/jest`   | In-memory mock implementations for Jest                                 |
+| `amqpx/zod`    | ZodValidatedConsumer decorator                                          |
 
 ## Quick example
 
