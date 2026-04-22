@@ -11,7 +11,7 @@ export default defineConfig({
             ],
         },
         globals: true,
-        testTimeout: 30_000,
+        testTimeout: 60_000,
         hookTimeout: 60_000,
         globalSetup: './tests/setup/global-setup.ts',
         setupFiles: ['./tests/setup/before-each.ts'],

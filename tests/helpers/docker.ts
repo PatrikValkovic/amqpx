@@ -36,8 +36,8 @@ export async function restartContainer(name: string): Promise<void> {
 }
 
 export async function waitForHealthy(name: string, timeoutMs = 30_000): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
+    const start = performance.now();
+    while (performance.now() - start < timeoutMs) {
         const { stdout } = await execFile('docker', [
             'inspect', '--format', '{{.State.Health.Status}}', name,
         ]).catch(() => ({ stdout: 'none', stderr: '' }));

@@ -34,7 +34,7 @@ export async function addToxic(proxyName: string, toxic: Omit<Toxic, 'name'> & {
     });
     if (!res.ok)
         throw new Error(`Failed to add toxic: ${res.status} ${await res.text()}`);
-    return res.json() as Promise<Toxic>;
+    return await res.json();
 }
 
 export async function removeToxic(proxyName: string, toxicName: string): Promise<void> {

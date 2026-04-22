@@ -8,7 +8,7 @@ import {
     Queue,
 } from '../../src';
 import { DIRECT_OPTIONS, PROXIED_OPTIONS } from '../helpers/broker-urls';
-import { RABBIT_CONTAINER, dockerExec } from '../helpers/docker';
+import { RABBIT_CONTAINER, dockerExec, restartContainer, waitForHealthy } from '../helpers/docker';
 import { withToxic } from '../helpers/toxiproxy';
 import { uniqueName } from '../helpers/names';
 import { sleepPromise } from '../../src/utils';
@@ -28,20 +28,17 @@ describe('BatchConsumer integration', () => {
         dlqName = uniqueName('dlq');
 
         connection = new ConnectionImplementation(DIRECT_OPTIONS);
-        await connection.connect();
 
         consumerChannel = connection.createChannel();
         managementChannel = connection.createChannel();
-        await consumerChannel.connect();
-        await managementChannel.connect();
 
         await managementChannel.createQueue(dlqName, {
-            durable: false,
+            durable: true,
             autoDelete: false,
         });
 
         queue = await consumerChannel.createQueue(queueName, {
-            durable: false,
+            durable: true,
             autoDelete: false,
             arguments: {
                 'x-dead-letter-exchange': '',
@@ -51,7 +48,7 @@ describe('BatchConsumer integration', () => {
     });
 
     afterEach(async () => {
-        await connection?.close().catch(() => {});
+        await connection?.close();
     });
 
     async function publishN(n: number): Promise<void> {
@@ -61,15 +58,22 @@ describe('BatchConsumer integration', () => {
                 'publish',
                 `routing_key=${queueName}`,
                 `payload=${JSON.stringify({ value: i })}`,
+                `properties=${JSON.stringify({
+                    delivery_mode: 2,
+                })}`,
             ]);
         }
     }
 
     async function expectQueueDepth(name: string, expected: number): Promise<void> {
-        await vi.waitFor(async () => {
-            const { messageCount } = await managementChannel.checkQueue(name);
-            expect(messageCount).toBe(expected);
-        }, { timeout: 5000 });
+        const { stdout } = await dockerExec(RABBIT_CONTAINER, [
+            'rabbitmq-diagnostics',
+            'list_queues',
+            '--formatter=json',
+        ]);
+        const parsed: Array<{ name: string; messages: number }> = JSON.parse(stdout);
+        const relevantQueue = parsed.find(q => q.name === name);
+        expect(relevantQueue?.messages).toEqual(expected);
     }
 
     function suppressErrors(consumer: BatchConsumerImplementation<TestMessage>): void {
@@ -119,21 +123,7 @@ describe('BatchConsumer integration', () => {
             await connection.close();
 
             connection = new ConnectionImplementation(PROXIED_OPTIONS);
-            await connection.connect();
             consumerChannel = connection.createChannel();
-            managementChannel = connection.createChannel();
-            await consumerChannel.connect();
-            await managementChannel.connect();
-
-            await managementChannel.createQueue(dlqName, { durable: false, autoDelete: false });
-            queue = await consumerChannel.createQueue(queueName, {
-                durable: false,
-                autoDelete: false,
-                arguments: {
-                    'x-dead-letter-exchange': '',
-                    'x-dead-letter-routing-key': dlqName,
-                },
-            });
 
             const consumer = new BatchConsumerImplementation<TestMessage>(consumerChannel, queue, {
                 batchSize: 5,
@@ -291,6 +281,50 @@ describe('BatchConsumer integration', () => {
             releaseLatch();
             await expect(closePromise).resolves.toBeUndefined();
             expect(listener).toHaveBeenCalledTimes(1);
+            await expectQueueDepth(queueName, 0);
+        });
+    });
+
+    describe('reconnect', () => {
+        it('should reconnect and keep consuming after connection', async () => {
+            await connection.close();
+
+            connection = new ConnectionImplementation(PROXIED_OPTIONS);
+            consumerChannel = connection.createChannel();
+
+            const consumer = new BatchConsumerImplementation<TestMessage>(consumerChannel, queue, {
+                batchSize: 5,
+                maxWaitTimeForBatch: 500,
+            });
+
+            let consumedMessages = 0;
+            const listener = vi.fn().mockImplementation(({ messages }) => {
+                consumedMessages += messages.length;
+            });
+            await consumer.listen(listener);
+
+            const publishedMessages = await withToxic('rabbit', {
+                type: 'latency',
+                stream: 'downstream',
+                toxicity: 1,
+                attributes: { latency: 100, jitter: 0 },
+            }, async () => {
+                let published = 0;
+                const publishInterval = setInterval(async () => {
+                    publishN(1)
+                        .then(() => published++)
+                        .catch(_err => { /* ignore */ });
+                }, 50);
+                await sleepPromise(1000);
+                await restartContainer(RABBIT_CONTAINER);
+                await waitForHealthy(RABBIT_CONTAINER);
+                await sleepPromise(1000);
+                clearInterval(publishInterval);
+                await sleepPromise(5000);
+                return published;
+            });
+
+            expect(publishedMessages).toEqual(consumedMessages);
             await expectQueueDepth(queueName, 0);
         });
     });
