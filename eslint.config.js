@@ -16,6 +16,8 @@ module.exports = [
             'dist/**/*',
             'vitest.config.mts',
             'vitest.integration.config.mts',
+            "doc_build/**/*",
+            "doc/**/*",
         ]
     },
     {

@@ -5,7 +5,7 @@ import { Queue, QueueOptions } from '../queue';
 import { ExchangeTypes, Exchange } from '../exchange';
 import { Producer } from '../producer';
 import { ProducerOptions } from '../producer/types';
-import { ConsumerOptions, Consumer } from '../consumer';
+import { ConsumerOptions, Consumer, BatchConsumerOptions, BatchConsumer } from '../consumer';
 import { ExchangeConsumerQueueOptions, ExchangeOptions } from '../exchange/types';
 import { ChannelPublishOptions } from './types';
 
@@ -131,4 +131,28 @@ export interface Channel extends EventEmitter<ChannelEventMap> {
      * @param queueOptions - Options for the auto-created exclusive queue binding.
      */
     createConsumerForExchange<T>(exchange: Exchange, options?: ConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>>;
+
+    /**
+     * Create a batch consumer that reads from a queue using this channel.
+     * Each consumer should have its own dedicated channel; this method use current
+     * channel. Consider using `connection.createBatchConsumerForQueue` or pass channel
+     * in `options` param.
+     *
+     * @param queue - Source queue.
+     * @param options - Optional batch consumer options (batch size, failure strategy, prefetch, …).
+     */
+    createBatchConsumerForQueue<T>(queue: Queue, options?: BatchConsumerOptions<T>): Promise<BatchConsumer<T>>;
+
+    /**
+     * Create a batch consumer that reads from an exchange using this channel.
+     * Internally asserts an exclusive queue and binds it to the exchange.
+     * Each consumer should have its own dedicated channel; this method use current
+     * channel. Consider using `connection.createBatchConsumerForExchange` or pass channel
+     * in `options` param.
+     *
+     * @param exchange - Source exchange.
+     * @param options - Optional batch consumer options (batch size, failure strategy, prefetch, …).
+     * @param queueOptions - Options for the auto-created exclusive queue binding.
+     */
+    createBatchConsumerForExchange<T>(exchange: Exchange, options?: BatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>>;
 }

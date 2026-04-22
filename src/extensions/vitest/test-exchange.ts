@@ -1,5 +1,5 @@
 import { Exchange } from '../../index';
-import { TestConsumer, TestProducer } from '.';
+import { TestConsumer, TestBatchConsumer, TestProducer } from '.';
 
 /**
  * Mock implementation of Exchange using vitest mocks.
@@ -28,6 +28,10 @@ export class TestExchange implements Exchange {
 
     createConsumer = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),
+    ));
+
+    createBatchConsumer = vitest.fn().mockImplementation(() => Promise.resolve(
+        new TestBatchConsumer(),
     ));
 
     createProducer = vitest.fn().mockImplementation(() => Promise.resolve(

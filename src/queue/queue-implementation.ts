@@ -1,7 +1,7 @@
 import { debuglog } from 'util';
 import { Channel } from '../channel';
 import { Exchange } from '../exchange';
-import { ConsumerImplementation, ConsumerOptions, Consumer } from '../consumer';
+import { ConsumerImplementation, ConsumerOptions, Consumer, BatchConsumerImplementation, BatchConsumerOptions, BatchConsumer } from '../consumer';
 import { ProducerOptions, ProducerImplementation } from '../producer';
 import { predefined } from '../index';
 import { deepMerge, LIB_NAME } from '../utils';
@@ -75,6 +75,12 @@ export class QueueImplementation implements Queue {
     createConsumer<T>(options: ConsumerOptions<T> = {}): Promise<Consumer<T>> {
         return Promise.resolve(
             new ConsumerImplementation(options.channel ?? this.channel, this, options),
+        );
+    }
+
+    createBatchConsumer<T>(options: BatchConsumerOptions<T> = {}): Promise<BatchConsumer<T>> {
+        return Promise.resolve(
+            new BatchConsumerImplementation(options.channel ?? this.channel, this, options),
         );
     }
 

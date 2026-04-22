@@ -1,5 +1,6 @@
 import { Queue } from '../../index';
 import { TestConsumer } from './test-consumer';
+import { TestBatchConsumer } from './test-batch-consumer';
 import { TestProducer } from './test-producer';
 
 /**
@@ -27,6 +28,10 @@ export class TestQueue implements Queue {
 
     createConsumer = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),
+    ));
+
+    createBatchConsumer = vitest.fn().mockImplementation(() => Promise.resolve(
+        new TestBatchConsumer(),
     ));
 
     createProducer = vitest.fn().mockImplementation(() => Promise.resolve(

@@ -5,7 +5,7 @@ import { DEFAULT_RETRY_STRATEGY, normalizeRetryStrategy, retryLoop, RetryStrateg
 import { TimeStrategy } from '../retry/time-strategies';
 import { Channel, ChannelImplementation } from '../channel';
 import { Exchange } from '../exchange';
-import { Consumer, ConsumerOptions } from '../consumer';
+import { Consumer, ConsumerOptions, BatchConsumer, BatchConsumerOptions } from '../consumer';
 import { ExchangeConsumerQueueOptions } from '../exchange/types';
 import { Queue } from '../queue';
 import { ProducerOptions, Producer } from '../producer';
@@ -145,6 +145,14 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
 
     createConsumerForQueue<T>(queue: Queue, options?: ConsumerOptions<T>): Promise<Consumer<T>> {
         return this.createChannel().createConsumerForQueue(queue, options);
+    }
+
+    createBatchConsumerForQueue<T>(queue: Queue, options?: BatchConsumerOptions<T>): Promise<BatchConsumer<T>> {
+        return this.createChannel().createBatchConsumerForQueue(queue, options);
+    }
+
+    createBatchConsumerForExchange<T>(exchange: Exchange, options?: BatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>> {
+        return this.createChannel().createBatchConsumerForExchange(exchange, options, queueOptions);
     }
 
     createProducerForExchange<T>(exchange: Exchange, options?: ProducerOptions<T>, isConfirmed?: boolean): Promise<Producer<T>> {

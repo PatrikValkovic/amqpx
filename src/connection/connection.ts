@@ -5,7 +5,7 @@ import { Queue } from '../queue';
 import { ProducerOptions } from '../producer/types';
 import { Producer } from '../producer';
 import { Exchange } from '../exchange';
-import { ConsumerOptions, Consumer } from '../consumer';
+import { ConsumerOptions, Consumer, BatchConsumerOptions, BatchConsumer } from '../consumer';
 import { ExchangeConsumerQueueOptions } from '../exchange/types';
 
 /**
@@ -117,6 +117,15 @@ export interface Connection extends EventEmitter<ConnectionEventMap> {
      * It will create exclusive queue and bind it to the exchange.
      */
     createConsumerForExchange<T>(exchange: Exchange, options?: ConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>>;
+    /**
+     * Create batch consumer of queue and create new channel for it.
+     */
+    createBatchConsumerForQueue<T>(queue: Queue, options?: BatchConsumerOptions<T>): Promise<BatchConsumer<T>>;
+    /**
+     * Create batch consumer for exchange and create new channel for it.
+     * It will create exclusive queue and bind it to the exchange.
+     */
+    createBatchConsumerForExchange<T>(exchange: Exchange, options?: BatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>>;
 
     /**
      * Returns the underlying amqplib connection. Resolves once the connection is established.

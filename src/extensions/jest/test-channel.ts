@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { Channel } from '../../index';
-import { TestConsumer, TestExchange, TestProducer, TestQueue } from '.';
+import { TestConsumer, TestBatchConsumer, TestExchange, TestProducer, TestQueue } from '.';
 /**
  * Mock implementation of Channel using jest mocks.
  *
@@ -68,6 +68,14 @@ export class TestChannel extends EventEmitter implements Channel {
 
     createConsumerForExchange = jest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),
+    ));
+
+    createBatchConsumerForQueue = jest.fn().mockImplementation(() => Promise.resolve(
+        new TestBatchConsumer(),
+    ));
+
+    createBatchConsumerForExchange = jest.fn().mockImplementation(() => Promise.resolve(
+        new TestBatchConsumer(),
     ));
 
     native = jest.fn().mockImplementation(() => Promise.resolve(this.nativeChannel));

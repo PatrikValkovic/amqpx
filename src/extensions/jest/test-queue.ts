@@ -1,5 +1,6 @@
 import { Queue } from '../../index';
 import { TestConsumer } from './test-consumer';
+import { TestBatchConsumer } from './test-batch-consumer';
 import { TestProducer } from './test-producer';
 
 /**
@@ -27,6 +28,10 @@ export class TestQueue implements Queue {
 
     createConsumer = jest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),
+    ));
+
+    createBatchConsumer = jest.fn().mockImplementation(() => Promise.resolve(
+        new TestBatchConsumer(),
     ));
 
     createProducer = jest.fn().mockImplementation(() => Promise.resolve(

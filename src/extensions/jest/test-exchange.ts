@@ -1,5 +1,5 @@
 import { Exchange } from '../../index';
-import { TestConsumer, TestProducer } from '.';
+import { TestConsumer, TestBatchConsumer, TestProducer } from '.';
 
 /**
  * Mock implementation of Exchange using jest mocks.
@@ -28,6 +28,10 @@ export class TestExchange implements Exchange {
 
     createConsumer = jest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),
+    ));
+
+    createBatchConsumer = jest.fn().mockImplementation(() => Promise.resolve(
+        new TestBatchConsumer(),
     ));
 
     createProducer = jest.fn().mockImplementation(() => Promise.resolve(

@@ -3,6 +3,7 @@ import { Connection, ConnectionState } from '../../index';
 import { TestProducer } from './test-producer';
 import { TestChannel } from './test-channel';
 import { TestConsumer } from './test-consumer';
+import { TestBatchConsumer } from './test-batch-consumer';
 
 /**
  * Mock implementation of Connection using jest mocks.
@@ -36,6 +37,14 @@ export class TestConnection extends EventEmitter implements Connection {
 
     createConsumerForQueue = jest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),
+    ));
+
+    createBatchConsumerForQueue = jest.fn().mockImplementation(() => Promise.resolve(
+        new TestBatchConsumer(),
+    ));
+
+    createBatchConsumerForExchange = jest.fn().mockImplementation(() => Promise.resolve(
+        new TestBatchConsumer(),
     ));
 
     createProducerForExchange = jest.fn().mockImplementation(() => Promise.resolve(

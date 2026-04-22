@@ -1,7 +1,7 @@
 import { debuglog } from 'util';
 import { Channel } from '../channel';
 import { Queue } from '../queue';
-import { ConsumerOptions } from '../consumer';
+import { ConsumerOptions, BatchConsumerOptions } from '../consumer';
 import { ProducerOptions, Producer, ProducerImplementation } from '../producer';
 import { deepMerge, errToMessage, LIB_NAME } from '../utils';
 import { AssertionMode } from '../types';
@@ -147,6 +147,15 @@ export class ExchangeImplementation implements Exchange {
             exclusive: true,
         });
         return queue.createConsumer(options);
+    }
+
+    async createBatchConsumer<T>(options: BatchConsumerOptions<T> = {}, queueOptions: ExchangeConsumerQueueOptions = {}) {
+        const queue = await this.channel.createQueue('', {
+            ...queueOptions,
+            durable: false,
+            exclusive: true,
+        });
+        return queue.createBatchConsumer(options);
     }
 
     createProducer<T>(options: ProducerOptions<T> = {}): Promise<Producer<T>> {
