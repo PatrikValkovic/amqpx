@@ -6,7 +6,7 @@ import { TimeStrategy } from '../retry/time-strategies';
 import { Channel, ChannelImplementation } from '../channel';
 import { Exchange } from '../exchange';
 import { Consumer, ConsumerOptions, BatchConsumer, BatchConsumerOptions } from '../consumer';
-import { ExchangeConsumerQueueOptions } from '../exchange/types';
+import { ExchangeConsumerQueueOptions, ExchangeConsumerOptions, ExchangeBatchConsumerOptions } from '../exchange/types';
 import { Queue } from '../queue';
 import { ProducerOptions, Producer } from '../producer';
 import { TooManyRetriesError } from '../errors';
@@ -139,7 +139,7 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
         return new ChannelImplementation(this, isConfirmed);
     }
 
-    createConsumerForExchange<T>(exchange: Exchange, options?: ConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>> {
+    createConsumerForExchange<T>(exchange: Exchange, options: ExchangeConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>> {
         return this.createChannel().createConsumerForExchange(exchange, options, queueOptions);
     }
 
@@ -151,7 +151,7 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
         return this.createChannel().createBatchConsumerForQueue(queue, options);
     }
 
-    createBatchConsumerForExchange<T>(exchange: Exchange, options?: BatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>> {
+    createBatchConsumerForExchange<T>(exchange: Exchange, options: ExchangeBatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>> {
         return this.createChannel().createBatchConsumerForExchange(exchange, options, queueOptions);
     }
 

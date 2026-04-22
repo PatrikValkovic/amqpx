@@ -7,7 +7,7 @@ import { Connection } from '../connection';
 import { Exchange, ExchangeImplementation, ExchangeTypes } from '../exchange';
 import { Queue, QueueImplementation, QueueOptions } from '../queue';
 import { ProducerOptions, Producer } from '../producer';
-import { ExchangeConsumerQueueOptions, ExchangeOptions } from '../exchange/types';
+import { ExchangeConsumerQueueOptions, ExchangeConsumerOptions, ExchangeBatchConsumerOptions, ExchangeOptions } from '../exchange/types';
 import { Consumer, ConsumerOptions, BatchConsumer, BatchConsumerOptions } from '../consumer';
 import { DEFAULT_RETRY_STRATEGY, retryLoop } from '../retry';
 import { DrainError } from '../errors';
@@ -196,10 +196,10 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
         });
     }
 
-    createConsumerForExchange<T>(exchange: Exchange, options?: ConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>> {
+    createConsumerForExchange<T>(exchange: Exchange, options: ExchangeConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>> {
         return exchange.createConsumer({
             channel: this,
-            ...(options ?? {}),
+            ...options,
         }, queueOptions);
     }
 
@@ -210,10 +210,10 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
         });
     }
 
-    createBatchConsumerForExchange<T>(exchange: Exchange, options?: BatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>> {
+    createBatchConsumerForExchange<T>(exchange: Exchange, options: ExchangeBatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>> {
         return exchange.createBatchConsumer({
             channel: this,
-            ...(options ?? {}),
+            ...options,
         }, queueOptions);
     }
 }

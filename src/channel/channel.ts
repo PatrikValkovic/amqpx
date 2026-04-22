@@ -5,7 +5,7 @@ import { Queue, QueueOptions } from '../queue';
 import { ExchangeTypes, Exchange } from '../exchange';
 import { Producer, ProducerOptions } from '../producer';
 import { ConsumerOptions, Consumer, BatchConsumerOptions, BatchConsumer } from '../consumer';
-import { ExchangeConsumerQueueOptions, ExchangeOptions } from '../exchange/types';
+import { ExchangeConsumerQueueOptions, ExchangeConsumerOptions, ExchangeBatchConsumerOptions, ExchangeOptions } from '../exchange/types';
 import { Connection } from '../connection';
 import { ChannelPublishOptions } from './types';
 
@@ -136,7 +136,7 @@ export interface Channel extends EventEmitter<ChannelEventMap> {
      * @param options - Optional consumer options (failure strategy, prefetch, …).
      * @param queueOptions - Options for the auto-created exclusive queue binding.
      */
-    createConsumerForExchange<T>(exchange: Exchange, options?: ConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>>;
+    createConsumerForExchange<T>(exchange: Exchange, options: ExchangeConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>>;
 
     /**
      * Create a batch consumer that reads from a queue using this channel.
@@ -160,5 +160,5 @@ export interface Channel extends EventEmitter<ChannelEventMap> {
      * @param options - Optional batch consumer options (batch size, failure strategy, prefetch, …).
      * @param queueOptions - Options for the auto-created exclusive queue binding.
      */
-    createBatchConsumerForExchange<T>(exchange: Exchange, options?: BatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>>;
+    createBatchConsumerForExchange<T>(exchange: Exchange, options: ExchangeBatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>>;
 }

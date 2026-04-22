@@ -1,11 +1,10 @@
 import { debuglog } from 'util';
 import { Channel } from '../channel';
 import { Queue } from '../queue';
-import { ConsumerOptions, BatchConsumerOptions } from '../consumer';
 import { ProducerOptions, Producer, ProducerImplementation } from '../producer';
 import { deepMerge, errToMessage, LIB_NAME } from '../utils';
 import { AssertionMode } from '../types';
-import { BindingArgs, Binding, BindingType, ExchangeConsumerQueueOptions, ExchangeTypes, ExchangeOptions } from './types';
+import { BindingArgs, Binding, BindingType, ExchangeConsumerQueueOptions, ExchangeConsumerOptions, ExchangeBatchConsumerOptions, ExchangeTypes, ExchangeOptions } from './types';
 import { Exchange } from './exchange';
 
 const debug = debuglog(`${LIB_NAME}:exchange`);
@@ -140,21 +139,23 @@ export class ExchangeImplementation implements Exchange {
         debug('rebind-complete name=%s', this.exchangeName);
     }
 
-    async createConsumer<T>(options: ConsumerOptions<T> = {}, queueOptions: ExchangeConsumerQueueOptions = {}) {
+    async createConsumer<T>(options: ExchangeConsumerOptions<T>, queueOptions: ExchangeConsumerQueueOptions = {}) {
         const queue = await this.channel.createQueue('', {
             ...queueOptions,
             durable: false,
             exclusive: true,
         });
+        await this.bindQueue(queue, options.pattern, options.bindingArgs);
         return queue.createConsumer(options);
     }
 
-    async createBatchConsumer<T>(options: BatchConsumerOptions<T> = {}, queueOptions: ExchangeConsumerQueueOptions = {}) {
+    async createBatchConsumer<T>(options: ExchangeBatchConsumerOptions<T>, queueOptions: ExchangeConsumerQueueOptions = {}) {
         const queue = await this.channel.createQueue('', {
             ...queueOptions,
             durable: false,
             exclusive: true,
         });
+        await this.bindQueue(queue, options.pattern, options.bindingArgs);
         return queue.createBatchConsumer(options);
     }
 

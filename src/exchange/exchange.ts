@@ -1,7 +1,7 @@
 import { Queue } from '../queue';
-import { ConsumerOptions, Consumer, BatchConsumerOptions, BatchConsumer } from '../consumer';
+import { Consumer, BatchConsumer } from '../consumer';
 import { ProducerOptions, Producer } from '../producer';
-import { ExchangeConsumerQueueOptions, BindingArgs } from './types';
+import { ExchangeConsumerQueueOptions, ExchangeConsumerOptions, ExchangeBatchConsumerOptions, BindingArgs } from './types';
 
 export interface Exchange {
     /**
@@ -47,7 +47,7 @@ export interface Exchange {
      * This is generally not recommended, as each producer/consumer should have separate channels.
      * Consider using `connection.createConsumerForExchange` method.
      */
-    createConsumer<T>(options?: ConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>>;
+    createConsumer<T>(options: ExchangeConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>>;
 
     /**
      * Create batch consumer for current exchange.
@@ -56,7 +56,7 @@ export interface Exchange {
      * This is generally not recommended, as each producer/consumer should have separate channels.
      * Consider using `connection.createBatchConsumerForExchange` method.
      */
-    createBatchConsumer<T>(options?: BatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>>;
+    createBatchConsumer<T>(options: ExchangeBatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>>;
 
     /**
      * Create producer for current exchange.
