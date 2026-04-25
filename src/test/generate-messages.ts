@@ -1,9 +1,9 @@
 import { TestChannel } from '../extensions/vitest';
 
-export const processGeneratedMessages = (channel: TestChannel, numOfMessages: number) => {
-    const messagesContent = Array.from({ length: numOfMessages }, (_, i) => i).map(
-        value => ({ value }),
-    );
+export const processGeneratedMessages = (channel: TestChannel, messages: number | object[]) => {
+    const messagesContent = Array.isArray(messages)
+        ? messages
+        : Array.from({ length: messages }, (_, i) => ({ value: i }));
     const rabbitMessages = messagesContent.map((content, i) => ({
         content: Buffer.from(JSON.stringify(content)),
         __index: i,

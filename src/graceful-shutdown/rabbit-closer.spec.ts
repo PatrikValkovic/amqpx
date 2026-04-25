@@ -1,0 +1,173 @@
+import { TestChannel, TestConsumer, TestProducer, TestConnection } from '../extensions/vitest';
+import { RabbitCloser } from './rabbit-closer';
+
+describe('RabbitCloser', () => {
+    let producer: TestProducer<unknown>;
+    let consumer: TestConsumer<unknown>;
+    let connection: TestConnection;
+
+    beforeEach(() => {
+        producer = new TestProducer();
+        consumer = new TestConsumer();
+        connection = new TestConnection();
+    });
+
+    describe('close with single entities', () => {
+        it('should close the producer', async () => {
+            const closer = new RabbitCloser([connection], [consumer], [producer]);
+            await closer.close();
+
+            expect(producer.close).toHaveBeenCalledTimes(1);
+        });
+
+        it('should close the consumer', async () => {
+            const closer = new RabbitCloser([connection], [consumer], [producer]);
+            await closer.close();
+
+            expect(consumer.close).toHaveBeenCalledTimes(1);
+        });
+
+        it('should close the producer channel', async () => {
+            const closer = new RabbitCloser([connection], [consumer], [producer]);
+            await closer.close();
+
+            expect(producer.channel.close).toHaveBeenCalledTimes(1);
+        });
+
+        it('should close the consumer channel', async () => {
+            const closer = new RabbitCloser([connection], [consumer], [producer]);
+            await closer.close();
+
+            expect(consumer.channel.close).toHaveBeenCalledTimes(1);
+        });
+
+        it('should close the connection', async () => {
+            const closer = new RabbitCloser([connection], [consumer], [producer]);
+            await closer.close();
+
+            expect(connection.close).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('close ordering', () => {
+        it('should close producer before its channel', async () => {
+            const callOrder: string[] = [];
+            producer.close = vi.fn().mockImplementation(async () => { callOrder.push('producer.close'); });
+            (producer.channel as TestChannel).close = vi.fn().mockImplementation(async () => { callOrder.push('channel.close'); });
+
+            const closer = new RabbitCloser([], [], [producer]);
+            await closer.close();
+
+            expect(callOrder.indexOf('producer.close')).toBeLessThan(callOrder.indexOf('channel.close'));
+        });
+
+        it('should close consumer before its channel', async () => {
+            const callOrder: string[] = [];
+            consumer.close = vi.fn().mockImplementation(async () => { callOrder.push('consumer.close'); });
+            (consumer.channel as TestChannel).close = vi.fn().mockImplementation(async () => { callOrder.push('channel.close'); });
+
+            const closer = new RabbitCloser([], [consumer], []);
+            await closer.close();
+
+            expect(callOrder.indexOf('consumer.close')).toBeLessThan(callOrder.indexOf('channel.close'));
+        });
+
+        it('should close channels before connections', async () => {
+            const callOrder: string[] = [];
+            (producer.channel as TestChannel).close = vi.fn().mockImplementation(async () => { callOrder.push('channel.close'); });
+            connection.close = vi.fn().mockImplementation(async () => { callOrder.push('connection.close'); });
+
+            const closer = new RabbitCloser([connection], [], [producer]);
+            await closer.close();
+
+            expect(callOrder.indexOf('channel.close')).toBeLessThan(callOrder.indexOf('connection.close'));
+        });
+
+        it('should close producer before connection', async () => {
+            const callOrder: string[] = [];
+            producer.close = vi.fn().mockImplementation(async () => { callOrder.push('producer.close'); });
+            connection.close = vi.fn().mockImplementation(async () => { callOrder.push('connection.close'); });
+
+            const closer = new RabbitCloser([connection], [], [producer]);
+            await closer.close();
+
+            expect(callOrder.indexOf('producer.close')).toBeLessThan(callOrder.indexOf('connection.close'));
+        });
+
+        it('should close consumer before connection', async () => {
+            const callOrder: string[] = [];
+            consumer.close = vi.fn().mockImplementation(async () => { callOrder.push('consumer.close'); });
+            connection.close = vi.fn().mockImplementation(async () => { callOrder.push('connection.close'); });
+
+            const closer = new RabbitCloser([connection], [consumer], []);
+            await closer.close();
+
+            expect(callOrder.indexOf('consumer.close')).toBeLessThan(callOrder.indexOf('connection.close'));
+        });
+
+        it('should close consumers after producers', async () => {
+            const callOrder: string[] = [];
+            producer.close = vi.fn().mockImplementation(async () => { callOrder.push('producer.close'); });
+            consumer.close = vi.fn().mockImplementation(async () => { callOrder.push('consumer.close'); });
+            // Suppress channel close tracking
+            (producer.channel as TestChannel).close = vi.fn().mockResolvedValue(undefined);
+            (consumer.channel as TestChannel).close = vi.fn().mockResolvedValue(undefined);
+
+            const closer = new RabbitCloser([], [consumer], [producer]);
+            await closer.close();
+
+            expect(callOrder.indexOf('producer.close')).toBeLessThan(callOrder.indexOf('consumer.close'));
+        });
+    });
+
+    describe('multiple entities', () => {
+        it('should close all producers', async () => {
+            const producer2 = new TestProducer();
+            const closer = new RabbitCloser([], [], [producer, producer2]);
+            await closer.close();
+
+            expect(producer.close).toHaveBeenCalledTimes(1);
+            expect(producer2.close).toHaveBeenCalledTimes(1);
+        });
+
+        it('should close all consumers', async () => {
+            const consumer2 = new TestConsumer();
+            const closer = new RabbitCloser([], [consumer, consumer2], []);
+            await closer.close();
+
+            expect(consumer.close).toHaveBeenCalledTimes(1);
+            expect(consumer2.close).toHaveBeenCalledTimes(1);
+        });
+
+        it('should close all connections', async () => {
+            const connection2 = new TestConnection();
+            const closer = new RabbitCloser([connection, connection2], [], []);
+            await closer.close();
+
+            expect(connection.close).toHaveBeenCalledTimes(1);
+            expect(connection2.close).toHaveBeenCalledTimes(1);
+        });
+
+        it('should close channels for both producers and consumers', async () => {
+            const closer = new RabbitCloser([], [consumer], [producer]);
+            await closer.close();
+
+            expect((producer.channel as TestChannel).close).toHaveBeenCalledTimes(1);
+            expect((consumer.channel as TestChannel).close).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('empty arrays', () => {
+        it('should resolve without error when all arrays are empty', async () => {
+            const closer = new RabbitCloser([], [], []);
+            await expect(closer.close()).resolves.toBeUndefined();
+        });
+
+        it('should close the connection when no producers or consumers', async () => {
+            const closer = new RabbitCloser([connection], [], []);
+            await closer.close();
+
+            expect(connection.close).toHaveBeenCalledTimes(1);
+        });
+    });
+});

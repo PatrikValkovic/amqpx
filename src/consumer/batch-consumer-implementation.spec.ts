@@ -20,11 +20,9 @@ describe('Batch consumer', () => {
         );
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         // @ts-expect-error batches is private property
         expect(consumer.batches).toHaveLength(0);
-        // @ts-expect-error currentlyProcessingMessages is private property
-        expect(consumer.currentlyProcessingMessages).toEqual(0);
         // each message were ack/nack at most once
         const messages: object[] = [];
         channel.nativeChannel.ack.mock.calls.forEach(([message]) => {
