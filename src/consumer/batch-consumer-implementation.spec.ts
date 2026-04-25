@@ -299,6 +299,116 @@ describe('Batch consumer', () => {
                 })),
             });
         });
+
+        it('should use custom parseMessageFn to parse messages', async () => {
+            const parseFn = vi.fn().mockImplementation((buf: Buffer): { parsed: string } => ({ parsed: buf.toString() }));
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 3,
+                    parseMessageFn: parseFn,
+                },
+            );
+            const listener = vi.fn().mockResolvedValue(undefined);
+
+            await consumer.listen(listener);
+
+            const handler = channel.nativeChannel.consume.mock.lastCall![1];
+            const contents = [Buffer.from('hello'), Buffer.from('world'), Buffer.from('!')];
+            const messages = contents.map(content => ({ content }));
+            await Promise.all(messages.map(msg => handler(msg)));
+
+            expect(parseFn).toHaveBeenCalledTimes(3);
+            expect(parseFn).toHaveBeenCalledWith(contents[0]);
+            expect(parseFn).toHaveBeenCalledWith(contents[1]);
+            expect(parseFn).toHaveBeenCalledWith(contents[2]);
+            expect(listener).toHaveBeenCalledTimes(1);
+            expect(listener).toHaveBeenCalledWith({
+                channel,
+                messages: [
+                    { message: { parsed: 'hello' }, rabbitMessage: messages[0] },
+                    { message: { parsed: 'world' }, rabbitMessage: messages[1] },
+                    { message: { parsed: '!' }, rabbitMessage: messages[2] },
+                ],
+            });
+        });
+
+        it('should support async parseMessageFn', async () => {
+            const parseFn = vi.fn().mockImplementation(async (buf: Buffer): Promise<{ parsed: string }> => ({ parsed: buf.toString() }));
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 2,
+                    parseMessageFn: parseFn,
+                },
+            );
+            const listener = vi.fn().mockResolvedValue(undefined);
+
+            await consumer.listen(listener);
+
+            const handler = channel.nativeChannel.consume.mock.lastCall![1];
+            const contents = [Buffer.from('foo'), Buffer.from('bar')];
+            const messages = contents.map(content => ({ content }));
+            await Promise.all(messages.map(msg => handler(msg)));
+
+            expect(parseFn).toHaveBeenCalledTimes(2);
+            expect(listener).toHaveBeenCalledTimes(1);
+            expect(listener).toHaveBeenCalledWith({
+                channel,
+                messages: [
+                    { message: { parsed: 'foo' }, rabbitMessage: messages[0] },
+                    { message: { parsed: 'bar' }, rabbitMessage: messages[1] },
+                ],
+            });
+        });
+
+        it('should pass consumeOptions to channel.consume', async () => {
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    consumeOptions: { priority: 10 },
+                },
+            );
+            await consumer.listen(vi.fn().mockResolvedValue(undefined));
+
+            const consumeCallOptions = channel.nativeChannel.consume.mock.lastCall![2];
+            expect(consumeCallOptions).toMatchObject({ priority: 10 });
+        });
+
+        it('should set noAck to true when failureStrategy is Drop and prefetch is not set', async () => {
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    failureStrategy: ConsumptionFailureStrategy.Drop,
+                },
+            );
+            await consumer.listen(vi.fn().mockResolvedValue(undefined));
+
+            const consumeCallOptions = channel.nativeChannel.consume.mock.lastCall![2];
+            expect(consumeCallOptions).toHaveProperty('noAck', true);
+        });
+
+        it('should set noAck to false when failureStrategy is Drop but prefetch is set', async () => {
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    failureStrategy: ConsumptionFailureStrategy.Drop,
+                    prefetch: 5,
+                },
+            );
+            await consumer.listen(vi.fn().mockResolvedValue(undefined));
+
+            const consumeCallOptions = channel.nativeChannel.consume.mock.lastCall![2];
+            expect(consumeCallOptions).toHaveProperty('noAck', false);
+        });
     });
 
     describe('batch out of order processing', () => {
@@ -1759,6 +1869,108 @@ describe('Batch consumer', () => {
             expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[7], true);
             expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[8], true);
             expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[9], true);
+        });
+    });
+
+    describe('handlingFailed event', () => {
+        it('should emit handlingFailed when listener callback throws', async () => {
+            const callbackError = new Error('callback failure');
+            const handlingFailedListener = vi.fn();
+            consumer.on('handlingFailed', handlingFailedListener);
+
+            await consumer.listen(vi.fn().mockRejectedValue(callbackError));
+            const { consumePromise } = processGeneratedMessages(channel, 5);
+            await consumePromise;
+
+            expect(handlingFailedListener).toHaveBeenCalledTimes(1);
+            expect(handlingFailedListener).toHaveBeenCalledWith(callbackError);
+        });
+
+        it('should emit handlingFailed once per batch not once per message in the batch', async () => {
+            const handlingFailedListener = vi.fn();
+            consumer.on('handlingFailed', handlingFailedListener);
+
+            await consumer.listen(vi.fn().mockRejectedValue(new Error('failure')));
+            const { consumePromise } = processGeneratedMessages(channel, 10);
+            await consumePromise;
+
+            expect(handlingFailedListener).toHaveBeenCalledTimes(2);
+        });
+
+        it('should emit handlingFailed for each batch across multiple failed batches', async () => {
+            const handlingFailedListener = vi.fn();
+            consumer.on('handlingFailed', handlingFailedListener);
+
+            await consumer.listen(vi.fn().mockRejectedValue(new Error('failure')));
+            const { consumePromise } = processGeneratedMessages(channel, 20);
+            await consumePromise;
+
+            expect(handlingFailedListener).toHaveBeenCalledTimes(4);
+        });
+
+        it('should emit handlingFailed for batch failure and for each individual message failure in split strategy', async () => {
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    batchFailureStrategy: BatchFailureStrategy.Split,
+                    failureStrategy: ConsumptionFailureStrategy.Reject,
+                },
+            );
+            const handlingFailedListener = vi.fn();
+            consumer.on('handlingFailed', handlingFailedListener);
+
+            await consumer.listen(vi.fn().mockRejectedValue(new Error('failure')));
+            const { consumePromise } = processGeneratedMessages(channel, 5);
+            await consumePromise;
+
+            // 1 for the batch + 5 for each individual message = 6 total
+            expect(handlingFailedListener).toHaveBeenCalledTimes(6);
+        });
+
+        it('should emit handlingFailed only once when batch fails but individual messages succeed in split strategy', async () => {
+            const consumer = new BatchConsumerImplementation(
+                channel,
+                new TestQueue(),
+                {
+                    batchSize: 5,
+                    batchFailureStrategy: BatchFailureStrategy.Split,
+                },
+            );
+            const handlingFailedListener = vi.fn();
+            consumer.on('handlingFailed', handlingFailedListener);
+
+            const listener = vi.fn()
+                .mockImplementationOnce(() => Promise.reject(new Error('batch failure')))
+                .mockResolvedValue(undefined);
+
+            await consumer.listen(listener);
+            const { consumePromise } = processGeneratedMessages(channel, 5);
+            await consumePromise;
+
+            expect(handlingFailedListener).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('lifecycle', () => {
+        it('should resolve close without error when called before listen', async () => {
+            await expect(consumer.close()).resolves.toBeUndefined();
+        });
+
+        it('should allow listen to be called again after close', async () => {
+            const listener = vi.fn().mockResolvedValue(undefined);
+
+            await consumer.listen(listener);
+            await consumer.close();
+
+            await consumer.listen(listener);
+            const { rabbitMessages, consumePromise } = processGeneratedMessages(channel, 5);
+            await consumePromise;
+
+            expect(channel.nativeChannel.consume).toHaveBeenCalledTimes(2);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.ack).toHaveBeenCalledWith(rabbitMessages[4], true);
         });
     });
 });
