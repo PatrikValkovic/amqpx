@@ -28,7 +28,6 @@ export abstract class BaseConsumer<
     EventMap extends BaseConsumerEventMap,
 > extends EventEmitter<EventMap> {
     protected consumer: Promise<ConsumerWrapper<CallbackFn>> | null = null;
-    protected currentlyProcessingMessages = 0;
     protected notifyMessageProcessed: (() => void) | undefined = undefined;
     private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -71,12 +70,12 @@ export abstract class BaseConsumer<
             const consumer = await this.consumer;
             const channel = await this.channel.native();
 
-            debug('closing tag=%s in-flight=%d', consumer.amqpConsumer.consumerTag, this.currentlyProcessingMessages);
+            debug('closing tag=%s in-flight=%d', consumer.amqpConsumer.consumerTag, consumer.messagesInFlight);
             await channel.cancel(consumer.amqpConsumer.consumerTag);
 
             const waitForAllMessagesPromise = new Promise<void>(resolve => {
                 this.notifyMessageProcessed = () => {
-                    if (this.currentlyProcessingMessages === 0)
+                    if (consumer.messagesInFlight === 0)
                         resolve();
                 };
                 this.notifyMessageProcessed();
@@ -94,9 +93,10 @@ export abstract class BaseConsumer<
                 ]);
             } finally {
                 debug('closed');
-                (this as EventEmitter<BaseConsumerEventMap>).emit('close');
+                consumer.isConnected = false;
                 this.consumer = null;
                 this.notifyMessageProcessed = undefined;
+                (this as EventEmitter<BaseConsumerEventMap>).emit('close');
             }
         }
     }

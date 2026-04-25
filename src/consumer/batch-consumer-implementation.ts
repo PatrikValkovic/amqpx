@@ -9,6 +9,7 @@ import {
     BatchFailureStrategy,
     BatchRecord,
     BatchState,
+    ConsumerWrapper,
     ConsumptionFailureStrategy,
     DEFAULT_CONSUMER_OPTIONS,
 } from './types';
@@ -51,31 +52,42 @@ export class BatchConsumerImplementation<Message>
             await channel.prefetch(this.options.prefetch);
 
             // this must be an object, so it is passed down as reference
-            const stillConnected = { value: true };
+            const consumerWrapper: Partial<ConsumerWrapper<BatchConsumerCallbackFn<Message>>> = {
+                callback,
+                messagesInFlight: 0,
+                isConnected: true,
+            };
             let listenerCloseHandler: () => void;
             const channelCloseHandler = () => {
                 debug(`channel-closed queue=%s`, queueName);
-                stillConnected.value = false;
+                consumerWrapper.isConnected = false;
                 this.off('close', listenerCloseHandler);
                 this.channelCloseCallback();
             };
             listenerCloseHandler = () => {
                 debug(`catch-close-event queue=%s`, queueName);
-                stillConnected.value = false;
+                consumerWrapper.isConnected = false;
                 this.channel.off('close', channelCloseHandler);
             };
             this.channel.once('close', channelCloseHandler);
             this.once('close', listenerCloseHandler);
 
-            const amqpConsumer = await channel.consume(
+            consumerWrapper.amqpConsumer = await channel.consume(
                 queueName,
-                this.messageReceiver.bind(this, callback, channel, stillConnected, queueName),
+                this.messageReceiver.bind(
+                    this,
+                    callback,
+                    channel,
+                    consumerWrapper as ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+                    queueName,
+                ),
                 {
                     ...this.options.consumeOptions,
                     noAck: this.shouldAutoAck,
                 },
             );
-            return { amqpConsumer, callback };
+
+            return consumerWrapper as ConsumerWrapper<BatchConsumerCallbackFn<Message>>;
         })();
 
         await this.consumer;
@@ -85,7 +97,7 @@ export class BatchConsumerImplementation<Message>
     private async messageReceiver(
         callback: BatchConsumerCallbackFn<Message>,
         originalChannel: amqp.Channel,
-        stillConnected: { value: boolean },
+        consumerWrapper: ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
         queueName: string,
         msg: amqp.ConsumeMessage | null,
     ) {
@@ -96,8 +108,8 @@ export class BatchConsumerImplementation<Message>
             return;
         }
 
-        this.currentlyProcessingMessages++;
-        debug('receive-message queue=%s in-flight=%d', queueName, this.currentlyProcessingMessages);
+        consumerWrapper.messagesInFlight++;
+        debug('receive-message queue=%s in-flight=%d', queueName, consumerWrapper.messagesInFlight);
 
         // Create new batch if necessary
         if (this.batches.length === 0 || last(this.batches)?.state !== BatchState.WaitingForData) {
@@ -122,7 +134,7 @@ export class BatchConsumerImplementation<Message>
                 callback,
                 originalChannel,
                 lastBatch,
-                stillConnected,
+                consumerWrapper,
                 queueName,
             );
             return;
@@ -137,7 +149,7 @@ export class BatchConsumerImplementation<Message>
                     callback,
                     originalChannel,
                     lastBatch,
-                    stillConnected,
+                    consumerWrapper,
                     queueName,
                 );
             }, this.maxWaitTimeForBatch);
@@ -180,14 +192,14 @@ export class BatchConsumerImplementation<Message>
         callback: BatchConsumerCallbackFn<Message>,
         originalChannel: amqp.Channel,
         batch: BatchRecord,
-        stillConnected: { value: boolean },
+        consumerWrapper: ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
         queueName: string,
     ) {
         // guard in case processing is called twice on the same batch
         if (batch.state !== BatchState.WaitingForData)
             return;
 
-        if (!stillConnected.value) {
+        if (!consumerWrapper.isConnected) {
             debug('batch-acknowledged queue=%s reason=%s', queueName, 'disconnected');
             batch.state = BatchState.Acknowledged;
             return;
@@ -215,12 +227,12 @@ export class BatchConsumerImplementation<Message>
                 callback,
                 originalChannel,
                 batch,
-                stillConnected,
+                consumerWrapper,
                 queueName,
             );
         } finally {
-            await this.planMessageAcknowledgment(stillConnected, originalChannel, queueName);
-            this.removeProcessedBatches(stillConnected, queueName);
+            await this.planMessageAcknowledgment(consumerWrapper, originalChannel, queueName);
+            this.removeProcessedBatches(consumerWrapper, queueName);
             debug('processing-batch-finished queue=%s batch-size=%d', queueName, batch.messages.length);
         }
     }
@@ -229,12 +241,12 @@ export class BatchConsumerImplementation<Message>
         callback: BatchConsumerCallbackFn<Message>,
         originalChannel: amqp.Channel,
         batch: BatchRecord,
-        stillConnected: { value: boolean },
+        consumerWrapper: ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
         queueName: string,
     ) {
         batch.state = BatchState.Failed;
 
-        if (!stillConnected.value) {
+        if (!consumerWrapper.isConnected) {
             debug('batch-acknowledged queue=%s reason=%s', queueName, 'disconnected');
             batch.state = BatchState.Acknowledged;
             return;
@@ -246,12 +258,12 @@ export class BatchConsumerImplementation<Message>
 
         const strategy = this.options.batchFailureStrategy;
         if (strategy === BatchFailureStrategy.Fail || batch.messages.length <= 1) {
-            await this.handleFailureStrategy(originalChannel, batch, stillConnected, batchIndex, queueName);
+            await this.handleFailureStrategy(originalChannel, batch, consumerWrapper, batchIndex, queueName);
         } else if (strategy === BatchFailureStrategy.Split) {
             await this.splitBatch(
                 originalChannel,
                 batch,
-                stillConnected,
+                consumerWrapper,
                 batchIndex,
                 callback,
                 queueName,
@@ -264,7 +276,7 @@ export class BatchConsumerImplementation<Message>
     private async handleFailureStrategy(
         originalChannel: amqp.Channel,
         batch: BatchRecord,
-        stillConnected: { value: boolean },
+        consumerWrapper: ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
         batchIndex: number,
         queueName: string,
     ) {
@@ -272,7 +284,7 @@ export class BatchConsumerImplementation<Message>
         case ConsumptionFailureStrategy.Drop:
             batch.state = BatchState.Processed;
             debug('batch-processed queue=%s reason=%s', queueName, 'drop-strategy');
-            await this.planMessageAcknowledgment(stillConnected, originalChannel, queueName);
+            await this.planMessageAcknowledgment(consumerWrapper, originalChannel, queueName);
             break;
 
         case ConsumptionFailureStrategy.Requeue:
@@ -316,7 +328,7 @@ export class BatchConsumerImplementation<Message>
     private async splitBatch(
         originalChannel: amqp.Channel,
         batch: BatchRecord,
-        stillConnected: { value: boolean },
+        consumerWrapper: ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
         batchIndex: number,
         callback: BatchConsumerCallbackFn<Message>,
         queueName: string,
@@ -331,13 +343,16 @@ export class BatchConsumerImplementation<Message>
             callback,
             originalChannel,
             batch,
-            stillConnected,
+            consumerWrapper,
             queueName,
         )));
     }
 
-    private removeProcessedBatches(stillConnected: { value: boolean }, queueName: string) {
-        if (!stillConnected.value || this.shouldAutoAck) {
+    private removeProcessedBatches(
+        consumerWrapper: ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        queueName: string,
+    ) {
+        if (!consumerWrapper.isConnected || this.shouldAutoAck) {
             this.batches
                 .filter(batch =>
                     batch.state === BatchState.Processed || batch.state === BatchState.Acknowledging,
@@ -364,22 +379,22 @@ export class BatchConsumerImplementation<Message>
             this.batches.splice(index, 1);
             clearTimeout(batch.confirmTimer);
             batch.confirmTimer = undefined;
-            this.currentlyProcessingMessages -= batch.messages.length;
+            consumerWrapper.messagesInFlight -= batch.messages.length;
         }
 
-        debug('acknowledged-cleaned queue=%s batches=%d in-flight=%d', queueName, indicesOfBatchesToRemove.length, this.currentlyProcessingMessages);
+        debug('acknowledged-cleaned queue=%s batches=%d in-flight=%d', queueName, indicesOfBatchesToRemove.length, consumerWrapper.messagesInFlight);
         this.notifyMessageProcessed?.();
     }
 
     private async planMessageAcknowledgment(
-        stillConnected: { value: boolean },
+        consumerWrapper: ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
         originalChannel: amqp.Channel,
         queueName: string,
     ) {
         if (this.batches.length === 0)
             return;
 
-        if (!stillConnected.value || this.shouldAutoAck)
+        if (!consumerWrapper.isConnected || this.shouldAutoAck)
             return;
 
         // for first X batches we can use confirmation with "up to" semantic
@@ -423,7 +438,7 @@ export class BatchConsumerImplementation<Message>
             )
             .forEach(batch => {
                 batch.confirmTimer = setTimeout(async () => {
-                    if (!stillConnected.value) {
+                    if (!consumerWrapper.isConnected) {
                         debug('batch-acknowledged queue=%s reason=%s', queueName, 'disconnect');
                         batch.state = BatchState.Acknowledged;
                     }
@@ -438,7 +453,7 @@ export class BatchConsumerImplementation<Message>
                     );
                     debug('batch-acknowledged queue=%s reason=%s', queueName, 'success');
                     batch.state = BatchState.Acknowledged;
-                    this.removeProcessedBatches(stillConnected, queueName);
+                    this.removeProcessedBatches(consumerWrapper, queueName);
                 }, this.maxWaitTimeForAck);
             });
     }

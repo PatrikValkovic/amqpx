@@ -4,7 +4,13 @@ import { Queue } from '../queue';
 import { Channel } from '../channel';
 import { deepMerge, errToMessage, LIB_NAME } from '../utils';
 import { Consumer, ConsumerEventMap } from './consumer';
-import { ConsumerCallbackFn, ConsumerOptions, ConsumptionFailureStrategy, DEFAULT_CONSUMER_OPTIONS } from './types';
+import {
+    ConsumerCallbackFn,
+    ConsumerOptions,
+    ConsumerWrapper,
+    ConsumptionFailureStrategy,
+    DEFAULT_CONSUMER_OPTIONS,
+} from './types';
 import { BaseConsumer } from './base-consumer';
 
 const debug = debuglog(`${LIB_NAME}:consume:simple`);
@@ -38,29 +44,34 @@ export class ConsumerImplementation<Message>
             await channel.prefetch(this.options.prefetch);
 
             // this must be an object, so it is passed down as reference
-            const channelStatus = {
+            const channelWrapper: Partial<ConsumerWrapper<ConsumerCallbackFn<Message>>> = {
                 isConnected: true,
+                callback,
+                messagesInFlight: 0,
             };
             this.channel.once('close', () => {
                 debug(`channel-closed queue=%s`, queueName);
-                channelStatus.isConnected = false;
+                channelWrapper.isConnected = false;
                 this.channelCloseCallback();
             });
 
-            this.currentlyProcessingMessages = 0;
-            const amqpConsumer = await channel.consume(
+            channelWrapper.amqpConsumer = await channel.consume(
                 queueName,
-                this.messageReceiver.bind(this, callback, shouldAck, channel, channelStatus, queueName),
+                this.messageReceiver.bind(
+                    this,
+                    callback,
+                    shouldAck,
+                    channel,
+                    channelWrapper as ConsumerWrapper<ConsumerCallbackFn<Message>>,
+                    queueName,
+                ),
                 {
                     ...this.options.consumeOptions,
                     noAck: !shouldAck,
                 },
             );
 
-            return {
-                amqpConsumer,
-                callback,
-            };
+            return channelWrapper as ConsumerWrapper<ConsumerCallbackFn<Message>>;
         })();
 
         await this.consumer;
@@ -71,7 +82,7 @@ export class ConsumerImplementation<Message>
         callback: ConsumerCallbackFn<Message>,
         shouldAck: boolean,
         originalChannel: amqp.Channel,
-        channelStatus: { isConnected: boolean },
+        consumerWrapper: ConsumerWrapper<ConsumerCallbackFn<Message>>,
         queueName: string,
         msg: amqp.ConsumeMessage | null,
     ) {
@@ -83,8 +94,8 @@ export class ConsumerImplementation<Message>
         }
 
         try {
-            this.currentlyProcessingMessages++;
-            debug('receive-message queue=%s in-flight=%d', queueName, this.currentlyProcessingMessages);
+            consumerWrapper.messagesInFlight++;
+            debug('receive-message queue=%s in-flight=%d', queueName, consumerWrapper.messagesInFlight);
             const { content } = msg;
             const parsed = await this.options.parseMessageFn(content);
             await callback({
@@ -92,13 +103,13 @@ export class ConsumerImplementation<Message>
                 rabbitMessage: msg,
                 channel: this.channel,
             });
-            if (channelStatus.isConnected && shouldAck)
+            if (consumerWrapper.isConnected && shouldAck)
                 // keep await there in case API change in the future
                 await originalChannel.ack(msg);
         } catch (error) {
             debug('message-handling-failed queue=%s error=%s strategy=%s', queueName, errToMessage(error), this.options.failureStrategy);
             this.emit('handlingFailed', error);
-            if (!channelStatus.isConnected)
+            if (!consumerWrapper.isConnected)
                 return;
             switch (this.options.failureStrategy) {
             case ConsumptionFailureStrategy.Drop:
@@ -107,17 +118,19 @@ export class ConsumerImplementation<Message>
                     await originalChannel.ack(msg);
                 return;
             case ConsumptionFailureStrategy.Reject:
-                originalChannel.nack(msg, false, false);
+                // keep await there in case API change in the future
+                await originalChannel.nack(msg, false, false);
                 return;
             case ConsumptionFailureStrategy.Requeue:
-                originalChannel.nack(msg, false, true);
+                // keep await there in case API change in the future
+                await originalChannel.nack(msg, false, true);
                 return;
             default:
                 throw new Error(`Not supported failure strategy: ${this.options.failureStrategy}`);
             }
         } finally {
-            this.currentlyProcessingMessages--;
-            debug('message-processed queue=%s in-flight=%d', queueName, this.currentlyProcessingMessages);
+            consumerWrapper.messagesInFlight--;
+            debug('message-processed queue=%s in-flight=%d', queueName, consumerWrapper.messagesInFlight);
             this.notifyMessageProcessed?.();
         }
     }

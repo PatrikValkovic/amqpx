@@ -7,15 +7,17 @@ import { MaybePromise } from '../types';
  */
 export enum ConsumptionFailureStrategy {
     /**
-     * It will acknowledge the message as successful. This effectively turns on auto acknowledgement.
+     * It will acknowledge the message as successful.
+     * This effectively turns on auto acknowledgement if
+     * prefetch is zero.
      */
     Drop = 'Drop',
     /**
-     * Message is rejected and moved into dead letter queue if configured on the consuming queue.
+     * Message is rejected and moved back into the queue, so different consumer can process it again.
      */
     Requeue = 'Requeue',
     /**
-     * Message is rejected and moved back into the queue, so different consumer can process it again.
+     * Message is rejected and moved into dead letter queue if configured on the consuming queue.
      */
     Reject = 'Reject',
 }
@@ -186,4 +188,6 @@ export type BatchRecord = {
 export type ConsumerWrapper<Callback> = {
     callback: Callback;
     amqpConsumer: amqp.Replies.Consume;
+    messagesInFlight: number;
+    isConnected: boolean;
 };
