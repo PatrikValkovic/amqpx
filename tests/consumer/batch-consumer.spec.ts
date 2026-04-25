@@ -1,19 +1,22 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    ConnectionImplementation,
     BatchConsumerImplementation,
     BatchFailureStrategy,
-    ConsumptionFailureStrategy,
     Channel,
+    ConnectionImplementation,
+    ConsumptionFailureStrategy,
     Queue,
 } from '../../src';
 import { DIRECT_OPTIONS, PROXIED_OPTIONS } from '../helpers/broker-urls';
-import { RABBIT_CONTAINER, dockerExec, restartContainer, waitForHealthy } from '../helpers/docker';
+import { RABBIT_CONTAINER, restartContainer, waitForHealthy } from '../helpers/docker';
 import { withToxic } from '../helpers/toxiproxy';
 import { uniqueName } from '../helpers/names';
-import { sleepPromise } from '../../src/utils';
+import { externallyResolvedPromise, sleepPromise } from '../../src/utils';
+import * as rabbitApi from '../helpers/rabbit-api';
 
 type TestMessage = { value: number };
+
+const PROPAGATION_DELAY = 10_000;
 
 describe('BatchConsumer integration', () => {
     let connection: ConnectionImplementation;
@@ -53,32 +56,17 @@ describe('BatchConsumer integration', () => {
 
     async function publishN(n: number): Promise<void> {
         for (let i = 0; i < n; i++) {
-            await dockerExec(RABBIT_CONTAINER, [
-                'rabbitmqadmin',
-                'publish',
-                `routing_key=${queueName}`,
-                `payload=${JSON.stringify({ value: i })}`,
-                `properties=${JSON.stringify({
-                    delivery_mode: 2,
-                })}`,
-            ]);
+            await rabbitApi.publish(
+                JSON.stringify({ value: i }),
+                queueName,
+            );
         }
     }
 
-    async function expectQueueDepth(name: string, expected: number): Promise<void> {
-        const { stdout } = await dockerExec(RABBIT_CONTAINER, [
-            'rabbitmq-diagnostics',
-            'list_queues',
-            '--formatter=json',
-        ]);
-        const parsed: Array<{ name: string; messages: number }> = JSON.parse(stdout);
-        const relevantQueue = parsed.find(q => q.name === name);
-        expect(relevantQueue?.messages).toEqual(expected);
-    }
-
-    function suppressErrors(consumer: BatchConsumerImplementation<TestMessage>): void {
-        consumer.on('error', () => {});
-        consumer.on('handlingFailed', () => {});
+    async function expectQueueDepth(name: string, expected: number) {
+        const queueDetail = await rabbitApi.queueDetail(name);
+        expect(queueDetail.messages).toEqual(expected);
+        return queueDetail;
     }
 
     describe('consuming', () => {
@@ -97,7 +85,9 @@ describe('BatchConsumer integration', () => {
             const { messages } = listener.mock.calls[0]![0] as { messages: Array<{ message: TestMessage }> };
             expect(messages).toHaveLength(5);
             expect(messages.map(m => m.message.value)).toEqual([0, 1, 2, 3, 4]);
-            await expectQueueDepth(queueName, 0);
+            await sleepPromise(PROPAGATION_DELAY);
+            const queueDetail = await expectQueueDepth(queueName, 0);
+            expect(queueDetail.message_stats.ack).toEqual(5);
         });
 
         it('should process multiple batches', async () => {
@@ -116,7 +106,9 @@ describe('BatchConsumer integration', () => {
                 const { messages } = call[0] as { messages: Array<{ message: TestMessage }> };
                 expect(messages).toHaveLength(5);
             }
-            await expectQueueDepth(queueName, 0);
+            await sleepPromise(PROPAGATION_DELAY);
+            const queueStatus = await expectQueueDepth(queueName, 0);
+            expect(queueStatus.message_stats.ack).toEqual(20);
         });
 
         it('should process a partial batch after maxWaitTimeForBatch elapses under network latency', async () => {
@@ -144,7 +136,42 @@ describe('BatchConsumer integration', () => {
 
             const { messages } = listener.mock.calls[0]![0] as { messages: Array<{ message: TestMessage }> };
             expect(messages).toHaveLength(3);
-            await expectQueueDepth(queueName, 0);
+            await sleepPromise(PROPAGATION_DELAY);
+            const queueStatus = await expectQueueDepth(queueName, 0);
+            expect(queueStatus.message_stats.ack).toEqual(3);
+        });
+
+        it('should process second batch when first one is delayed', async () => {
+            const consumer = new BatchConsumerImplementation<TestMessage>(consumerChannel, queue, {
+                batchSize: 5,
+                prefetch: 10,
+                maxWaitTimeForBatch: 5000,
+                maxWaitTimeForAck: 500,
+            });
+
+            const [latch, releaseLatch] = externallyResolvedPromise();
+
+            const listener = vi.fn()
+                .mockImplementationOnce(() => latch)
+                .mockResolvedValue(undefined);
+            await consumer.listen(listener);
+
+            await publishN(10);
+
+            await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(2), { timeout: 5000 });
+
+            await sleepPromise(PROPAGATION_DELAY);
+            const queueStatusBefore = await rabbitApi.queueDetail(queueName);
+            expect(queueStatusBefore.messages_unacknowledged).toEqual(5);
+            expect(queueStatusBefore.message_stats.ack).toEqual(5);
+            expect(queueStatusBefore.message_stats.deliver).toEqual(10);
+
+            releaseLatch();
+            await sleepPromise(PROPAGATION_DELAY);
+            const queueStatus = await expectQueueDepth(queueName, 0);
+            expect(queueStatus.messages_unacknowledged).toEqual(0);
+            expect(queueStatus.message_stats.ack).toEqual(10);
+            expect(queueStatus.message_stats.deliver).toEqual(10);
         });
     });
 
@@ -152,19 +179,21 @@ describe('BatchConsumer integration', () => {
         it('should dead-letter messages when Reject strategy is used', async () => {
             const consumer = new BatchConsumerImplementation<TestMessage>(consumerChannel, queue, {
                 batchSize: 5,
-                maxWaitTimeForBatch: 5000,
+                maxWaitTimeForBatch: 500,
                 batchFailureStrategy: BatchFailureStrategy.Fail,
                 failureStrategy: ConsumptionFailureStrategy.Reject,
             });
-            suppressErrors(consumer);
             const listener = vi.fn().mockRejectedValue(new Error('test rejection'));
             await consumer.listen(listener);
 
             await publishN(5);
 
             await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(1), { timeout: 5000 });
-            await expectQueueDepth(queueName, 0);
+            await sleepPromise(PROPAGATION_DELAY);
+            const queueStatus = await expectQueueDepth(queueName, 0);
             await expectQueueDepth(dlqName, 5);
+            expect(queueStatus.message_stats.ack).toEqual(0);
+            expect(queueStatus.message_stats.deliver).toEqual(5);
         });
 
         it('should redeliver and succeed on second attempt with Requeue strategy', async () => {
@@ -174,7 +203,6 @@ describe('BatchConsumer integration', () => {
                 batchFailureStrategy: BatchFailureStrategy.Fail,
                 failureStrategy: ConsumptionFailureStrategy.Requeue,
             });
-            suppressErrors(consumer);
             const listener = vi.fn()
                 .mockRejectedValueOnce(new Error('first attempt fails'))
                 .mockResolvedValue(undefined);
@@ -183,8 +211,53 @@ describe('BatchConsumer integration', () => {
             await publishN(5);
 
             await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(2), { timeout: 10000 });
-            await expectQueueDepth(queueName, 0);
+            await sleepPromise(PROPAGATION_DELAY);
+            const queueStatus = await expectQueueDepth(queueName, 0);
             await expectQueueDepth(dlqName, 0);
+            expect(queueStatus.message_stats.ack).toEqual(5);
+            expect(queueStatus.message_stats.deliver).toEqual(10);
+            expect(queueStatus.message_stats.redeliver).toEqual(5);
+        });
+
+        it('should acknowledge when failure strategy is Drop', async () => {
+            const consumer = new BatchConsumerImplementation<TestMessage>(consumerChannel, queue, {
+                prefetch: 5,
+                batchSize: 5,
+                maxWaitTimeForBatch: 5000,
+                batchFailureStrategy: BatchFailureStrategy.Fail,
+                failureStrategy: ConsumptionFailureStrategy.Drop,
+            });
+            const listener = vi.fn().mockRejectedValue(new Error('test rejection'));
+            await consumer.listen(listener);
+
+            await publishN(5);
+
+            await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(1), { timeout: 5000 });
+            await sleepPromise(PROPAGATION_DELAY);
+            const queueStatus = await expectQueueDepth(queueName, 0);
+            await expectQueueDepth(dlqName, 0);
+            expect(queueStatus.message_stats.ack).toEqual(5);
+            expect(queueStatus.message_stats.deliver).toEqual(5);
+        });
+
+        it('should turn on auto-ack when batch size is 0 and failure strategy is Drop', async () => {
+            const consumer = new BatchConsumerImplementation<TestMessage>(consumerChannel, queue, {
+                prefetch: 0,
+                batchSize: 5,
+                maxWaitTimeForBatch: 5000,
+                batchFailureStrategy: BatchFailureStrategy.Fail,
+                failureStrategy: ConsumptionFailureStrategy.Drop,
+            });
+            const listener = vi.fn().mockRejectedValue(new Error('test rejection'));
+            await consumer.listen(listener);
+
+            await publishN(5);
+
+            await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(1), { timeout: 5000 });
+            await sleepPromise(PROPAGATION_DELAY);
+            const queueStatus = await expectQueueDepth(queueName, 0);
+            await expectQueueDepth(dlqName, 0);
+            expect(queueStatus.message_stats.deliver_no_ack).toEqual(5);
         });
     });
 
@@ -196,7 +269,6 @@ describe('BatchConsumer integration', () => {
                 batchFailureStrategy: BatchFailureStrategy.Split,
                 failureStrategy: ConsumptionFailureStrategy.Reject,
             });
-            suppressErrors(consumer);
             const listener = vi.fn()
                 .mockRejectedValueOnce(new Error('batch fails — trigger split'))
                 .mockResolvedValue(undefined);
@@ -211,8 +283,11 @@ describe('BatchConsumer integration', () => {
             for (const call of individualCalls)
                 expect(call[0].messages).toHaveLength(1);
 
-            await expectQueueDepth(queueName, 0);
+            await sleepPromise(PROPAGATION_DELAY);
+            const queueStatus = await expectQueueDepth(queueName, 0);
             await expectQueueDepth(dlqName, 0);
+            expect(queueStatus.message_stats.ack).toEqual(5);
+            expect(queueStatus.message_stats.deliver).toEqual(5);
         });
 
         it('should dead-letter failing messages after split', async () => {
@@ -222,7 +297,6 @@ describe('BatchConsumer integration', () => {
                 batchFailureStrategy: BatchFailureStrategy.Split,
                 failureStrategy: ConsumptionFailureStrategy.Reject,
             });
-            suppressErrors(consumer);
             const listener = vi.fn()
                 // batch of 5 — fails, triggers split
                 .mockRejectedValueOnce(new Error('batch fails'))
@@ -243,32 +317,74 @@ describe('BatchConsumer integration', () => {
             for (const call of individualCalls)
                 expect(call[0].messages).toHaveLength(1);
 
-            await expectQueueDepth(queueName, 0);
+            await sleepPromise(PROPAGATION_DELAY);
+            const queueStatus = await expectQueueDepth(queueName, 0);
             await expectQueueDepth(dlqName, 2);
+            expect(queueStatus.message_stats.ack).toEqual(3);
+            expect(queueStatus.message_stats.deliver).toEqual(5);
+        });
+
+        it('should acknowledge individually when failure strategy is Drop', async () => {
+            const consumer = new BatchConsumerImplementation<TestMessage>(consumerChannel, queue, {
+                batchSize: 5,
+                prefetch: 20,
+                maxWaitTimeForBatch: 5000,
+                batchFailureStrategy: BatchFailureStrategy.Split,
+                failureStrategy: ConsumptionFailureStrategy.Drop,
+            });
+            const listener = vi.fn()
+                .mockRejectedValueOnce(new Error('batch fails — trigger split'))
+                .mockRejectedValue(new Error('individual message fails'));
+            await consumer.listen(listener);
+
+            await publishN(5);
+
+            await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(6), { timeout: 10000 });
+            await sleepPromise(PROPAGATION_DELAY);
+            const queueStatus = await expectQueueDepth(queueName, 0);
+            await expectQueueDepth(dlqName, 0);
+            expect(queueStatus.message_stats.ack).toEqual(5);
+            expect(queueStatus.message_stats.deliver).toEqual(5);
+        });
+
+        it('should turn on auto-ack when prefetch is 0 and failure strategy is Drop', async () => {
+            const consumer = new BatchConsumerImplementation<TestMessage>(consumerChannel, queue, {
+                prefetch: 0,
+                batchSize: 5,
+                maxWaitTimeForBatch: 5000,
+                batchFailureStrategy: BatchFailureStrategy.Split,
+                failureStrategy: ConsumptionFailureStrategy.Drop,
+            });
+            const listener = vi.fn().mockRejectedValue(new Error('test rejection'));
+            await consumer.listen(listener);
+
+            await publishN(5);
+
+            await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(6), { timeout: 5000 });
+            await sleepPromise(PROPAGATION_DELAY);
+            const queueStatus = await expectQueueDepth(queueName, 0);
+            await expectQueueDepth(dlqName, 0);
+            expect(queueStatus.message_stats.deliver_no_ack).toEqual(5);
         });
     });
 
     describe('consumer close', () => {
         it('should wait for an in-flight batch to complete before resolving', async () => {
-            let releaseLatch!: () => void;
-            const latch = new Promise<void>(resolve => {
-                releaseLatch = resolve;
-            });
-            let processingStarted = false;
+            const [latch, releaseLatch] = externallyResolvedPromise();
 
             const consumer = new BatchConsumerImplementation<TestMessage>(consumerChannel, queue, {
                 batchSize: 5,
                 maxWaitTimeForBatch: 5000,
             });
+
             const listener = vi.fn().mockImplementation(async () => {
-                processingStarted = true;
                 await latch;
             });
             await consumer.listen(listener);
 
             await publishN(5);
 
-            await vi.waitFor(() => expect(processingStarted).toBe(true), { timeout: 5000 });
+            await vi.waitFor(() => expect(listener).toHaveBeenCalled(), { timeout: 5000 });
 
             const closePromise = consumer.close();
 
@@ -281,10 +397,13 @@ describe('BatchConsumer integration', () => {
             releaseLatch();
             await expect(closePromise).resolves.toBeUndefined();
             expect(listener).toHaveBeenCalledTimes(1);
-            await expectQueueDepth(queueName, 0);
+            await sleepPromise(PROPAGATION_DELAY);
+            const queueStatus = await expectQueueDepth(queueName, 0);
+            expect(queueStatus.message_stats.ack).toEqual(5);
+            expect(queueStatus.message_stats.deliver).toEqual(5);
         });
 
-        it('should close the consumer', async () => {
+        it('should close the consumer when empty message is received', async () => {
             const consumer = new BatchConsumerImplementation<TestMessage>(consumerChannel, queue);
 
             const listener = vi.fn();
@@ -293,15 +412,9 @@ describe('BatchConsumer integration', () => {
             const closeFn = vi.fn();
             consumer.on('close', closeFn);
 
-            await sleepPromise(5000);
-            await dockerExec(RABBIT_CONTAINER, [
-                'rabbitmqadmin',
-                'delete',
-                'queue',
-                `name=${queueName}`,
-            ]);
-
-            await sleepPromise(5000);
+            await sleepPromise(PROPAGATION_DELAY);
+            await rabbitApi.queueDelete(queueName);
+            await sleepPromise(PROPAGATION_DELAY);
             expect(closeFn).toHaveBeenCalled();
         });
     });
@@ -349,7 +462,88 @@ describe('BatchConsumer integration', () => {
             });
 
             expect(publishedMessages).toEqual(consumedMessages);
+            await sleepPromise(PROPAGATION_DELAY);
             await expectQueueDepth(queueName, 0);
+            await expectQueueDepth(dlqName, 0);
+        });
+
+        it('should not contact broker when connection is lost during processing', async () => {
+            const [latch, releaseLatch] = externallyResolvedPromise();
+
+            const consumer = new BatchConsumerImplementation<TestMessage>(consumerChannel, queue, {
+                batchSize: 5,
+                prefetch: 5,
+                maxWaitTimeForBatch: 5000,
+            });
+
+            const errorHandler = vi.fn();
+            consumer.on('error', errorHandler);
+
+            const listener = vi.fn().mockImplementation(async () => {
+                await latch;
+            });
+            await consumer.listen(listener);
+
+            await publishN(5);
+            await vi.waitFor(() => expect(listener).toHaveBeenCalled(), { timeout: 5000 });
+            await sleepPromise(PROPAGATION_DELAY);
+            const beforeQueueStatus = await rabbitApi.queueDetail(queueName);
+            expect(beforeQueueStatus.messages_unacknowledged).toEqual(5);
+
+            await restartContainer(RABBIT_CONTAINER);
+            await waitForHealthy(RABBIT_CONTAINER);
+
+            releaseLatch();
+
+            await sleepPromise(PROPAGATION_DELAY);
+            expect(errorHandler).not.toHaveBeenCalled();
+            expect(listener).toHaveBeenCalledTimes(2);
+            const queueStatus = await expectQueueDepth(queueName, 0);
+            await expectQueueDepth(dlqName, 0);
+            // no redelivery because broker was restarted
+            expect(queueStatus.message_stats.ack).toEqual(5);
+            expect(queueStatus.message_stats.deliver).toEqual(5);
+        });
+
+        it('should not contact broker when connection is lost even during error', async () => {
+            const [latch, releaseLatch] = externallyResolvedPromise();
+
+            const consumer = new BatchConsumerImplementation<TestMessage>(consumerChannel, queue, {
+                batchSize: 5,
+                prefetch: 5,
+                maxWaitTimeForBatch: 5000,
+                batchFailureStrategy: BatchFailureStrategy.Fail,
+                failureStrategy: ConsumptionFailureStrategy.Reject,
+            });
+
+            const errorHandler = vi.fn();
+            consumer.on('error', errorHandler);
+
+            const listener = vi.fn().mockImplementation(async () => {
+                await latch;
+                throw new Error('testing-error');
+            });
+            await consumer.listen(listener);
+
+            await publishN(5);
+            await vi.waitFor(() => expect(listener).toHaveBeenCalled(), { timeout: 5000 });
+            await sleepPromise(PROPAGATION_DELAY);
+            const beforeQueueStatus = await rabbitApi.queueDetail(queueName);
+            expect(beforeQueueStatus.messages_unacknowledged).toEqual(5);
+
+            await restartContainer(RABBIT_CONTAINER);
+            await waitForHealthy(RABBIT_CONTAINER);
+
+            releaseLatch();
+
+            await sleepPromise(PROPAGATION_DELAY);
+            expect(errorHandler).not.toHaveBeenCalled();
+            expect(listener).toHaveBeenCalledTimes(2);
+            const queueStatus = await expectQueueDepth(queueName, 0);
+            await expectQueueDepth(dlqName, 5);
+            // no redelivery because broker was restarted
+            expect(queueStatus.message_stats.ack).toEqual(0);
+            expect(queueStatus.message_stats.deliver).toEqual(5);
         });
     });
 });

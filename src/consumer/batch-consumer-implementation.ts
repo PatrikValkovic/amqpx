@@ -235,19 +235,19 @@ export class BatchConsumerImplementation<Message>
             return;
         }
 
-        const indexOfBatch = this.batches.indexOf(batch);
-        if (indexOfBatch < 0)
+        const batchIndex = this.batches.indexOf(batch);
+        if (batchIndex < 0)
             throw this.processError('Internal error: Cannot find batch in the list of batches');
 
         const strategy = this.options.batchFailureStrategy;
         if (strategy === BatchFailureStrategy.Fail || batch.messages.length <= 1) {
-            await this.handleFailureStrategy(originalChannel, batch, stillConnected, indexOfBatch, queueName);
+            await this.handleFailureStrategy(originalChannel, batch, stillConnected, batchIndex, queueName);
         } else if (strategy === BatchFailureStrategy.Split) {
             await this.splitBatch(
                 originalChannel,
                 batch,
                 stillConnected,
-                indexOfBatch,
+                batchIndex,
                 callback,
                 queueName,
             );
@@ -260,7 +260,7 @@ export class BatchConsumerImplementation<Message>
         originalChannel: amqp.Channel,
         batch: BatchRecord,
         stillConnected: { value: boolean },
-        indexOfBatch: number,
+        batchIndex: number,
         queueName: string,
     ) {
         switch (this.options.failureStrategy) {
@@ -271,11 +271,11 @@ export class BatchConsumerImplementation<Message>
             break;
 
         case ConsumptionFailureStrategy.Requeue:
-            await this.nackMessages(originalChannel, batch, indexOfBatch, true, queueName);
+            await this.nackMessages(originalChannel, batch, batchIndex, true, queueName);
             break;
 
         case ConsumptionFailureStrategy.Reject:
-            await this.nackMessages(originalChannel, batch, indexOfBatch, false, queueName);
+            await this.nackMessages(originalChannel, batch, batchIndex, false, queueName);
             break;
 
         default:
@@ -286,15 +286,15 @@ export class BatchConsumerImplementation<Message>
     private async nackMessages(
         originalChannel: amqp.Channel,
         batch: BatchRecord,
-        indexOfBatch: number,
+        batchIndex: number,
         requeue: boolean,
         queueName: string,
     ) {
-        if (indexOfBatch > 0) {
+        if (batchIndex > 0) {
             await Promise.all(batch.messages.map(msg =>
                 originalChannel.nack(msg.rabbitMessage, false, requeue),
             ));
-        } else if (indexOfBatch === 0) {
+        } else if (batchIndex === 0) {
             const lastMessage = last(batch.messages);
             if (!lastMessage)
                 throw this.processError('Internal error: Last message in batch not found during nack');
@@ -312,7 +312,7 @@ export class BatchConsumerImplementation<Message>
         originalChannel: amqp.Channel,
         batch: BatchRecord,
         stillConnected: { value: boolean },
-        indexOfBatch: number,
+        batchIndex: number,
         callback: BatchConsumerCallbackFn<Message>,
         queueName: string,
     ) {
@@ -321,7 +321,7 @@ export class BatchConsumerImplementation<Message>
             state: BatchState.WaitingForData,
             messages: [message],
         }));
-        this.batches.splice(indexOfBatch, 1, ...splitBatches);
+        this.batches.splice(batchIndex, 1, ...splitBatches);
         await Promise.all(splitBatches.map(batch => this.handleBatch(
             callback,
             originalChannel,

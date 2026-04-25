@@ -78,3 +78,13 @@ export const errToMessage = (err: unknown) => {
         return `${err.message}`;
     return String(err);
 };
+
+export const externallyResolvedPromise = <T = void>() => {
+    let release: (v: T) => void;
+    const latch = new Promise<T>(resolve => {
+        release = resolve;
+    });
+
+    // @ts-expect-error assignment is guaranteed
+    return [latch, release] as const;
+};

@@ -10,10 +10,6 @@ const COMPOSE_FILE = path.join(__dirname, '..', '..', 'docker-compose.yml');
 export const RABBIT_CONTAINER = 'amqp-integ-rabbit';
 export const TOXI_CONTAINER = 'amqp-integ-toxi';
 
-export async function dockerExec(container: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-    return execFile('docker', ['exec', container, ...args]);
-}
-
 export async function containerStatus(container: string): Promise<string> {
     const { stdout } = await execFile('docker', ['inspect', '--format', '{{.State.Status}}', container]);
     return stdout.trim();
