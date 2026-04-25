@@ -283,6 +283,27 @@ describe('BatchConsumer integration', () => {
             expect(listener).toHaveBeenCalledTimes(1);
             await expectQueueDepth(queueName, 0);
         });
+
+        it('should close the consumer', async () => {
+            const consumer = new BatchConsumerImplementation<TestMessage>(consumerChannel, queue);
+
+            const listener = vi.fn();
+            await consumer.listen(listener);
+
+            const closeFn = vi.fn();
+            consumer.on('close', closeFn);
+
+            await sleepPromise(5000);
+            await dockerExec(RABBIT_CONTAINER, [
+                'rabbitmqadmin',
+                'delete',
+                'queue',
+                `name=${queueName}`,
+            ]);
+
+            await sleepPromise(5000);
+            expect(closeFn).toHaveBeenCalled();
+        });
     });
 
     describe('reconnect', () => {
@@ -310,17 +331,20 @@ describe('BatchConsumer integration', () => {
                 attributes: { latency: 100, jitter: 0 },
             }, async () => {
                 let published = 0;
-                const publishInterval = setInterval(async () => {
+                const publishingFn = async () => {
                     publishN(1)
                         .then(() => published++)
                         .catch(_err => { /* ignore */ });
-                }, 50);
-                await sleepPromise(1000);
-                await restartContainer(RABBIT_CONTAINER);
-                await waitForHealthy(RABBIT_CONTAINER);
+                };
+                let publishInterval = setInterval(publishingFn, 50);
                 await sleepPromise(1000);
                 clearInterval(publishInterval);
-                await sleepPromise(5000);
+                await restartContainer(RABBIT_CONTAINER);
+                await waitForHealthy(RABBIT_CONTAINER);
+                publishInterval = setInterval(publishingFn, 50);
+                await sleepPromise(1000);
+                clearInterval(publishInterval);
+                await sleepPromise(1000);
                 return published;
             });
 

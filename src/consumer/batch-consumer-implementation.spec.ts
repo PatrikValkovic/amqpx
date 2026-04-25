@@ -115,14 +115,17 @@ describe('Batch consumer', () => {
             await expect(consumer.listen(listener)).rejects.toThrow('Listener is already attached');
         });
 
-        it('should close channel when consumer is canceled via null message', async () => {
+        it('should close consumer when canceled via null message', async () => {
             const listener = vi.fn().mockResolvedValue(undefined);
             await consumer.listen(listener);
+
+            const closeFn = vi.fn();
+            consumer.on('close', closeFn);
 
             const handler = channel.nativeChannel.consume.mock.lastCall![1];
             await handler(null);
 
-            expect(channel.close).toHaveBeenCalledTimes(1);
+            expect(closeFn).toHaveBeenCalledTimes(1);
             expect(listener).not.toHaveBeenCalled();
             expect(channel.nativeChannel.ack).not.toHaveBeenCalled();
             expect(channel.nativeChannel.nack).not.toHaveBeenCalled();

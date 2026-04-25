@@ -78,7 +78,7 @@ export class ConsumerImplementation<Message>
         // empty message means consumer is canceled
         if (!msg) {
             debug('receive-empty-message queue=%s', queueName);
-            await this.channel.close();
+            await this.close();
             return;
         }
 
