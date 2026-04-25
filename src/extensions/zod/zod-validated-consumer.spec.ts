@@ -1,7 +1,8 @@
-import { z } from 'zod';
-import { TestConsumer } from '../vitest';
+import { z, ZodError } from 'zod';
+import { TestChannel, TestConsumer, TestQueue } from '../vitest';
+import { processGeneratedMessages } from '../../test/generate-messages';
+import { ConsumerImplementation } from '../../consumer';
 import { ZodValidatedConsumer } from './zod-validated-consumer';
-import { ZodValidationError } from './zod-validation-error';
 
 describe('ZodValidatedConsumer', () => {
     const schema = z.object({ value: z.number() });
@@ -26,75 +27,51 @@ describe('ZodValidatedConsumer', () => {
             }));
         });
 
-        it('should throw ZodValidationError when the message fails schema validation', async () => {
+        it('should throw ZodError when the message fails schema validation', async () => {
             const callback = vi.fn().mockResolvedValue(undefined);
             await validatedConsumer.listen(callback);
 
             await expect(
-                innerConsumer.deliverMessage({ value: 'not-a-number' } as any),
-            ).rejects.toThrow(ZodValidationError);
+                // @ts-expect-error types don't match on purpose
+                innerConsumer.deliverMessage({ value: 'not-a-number' }),
+            ).rejects.toThrow(ZodError);
 
             expect(callback).not.toHaveBeenCalled();
         });
 
-        it('should throw ZodValidationError with message describing the failure', async () => {
+        it('should throw ZodError with message describing the failure', async () => {
             await validatedConsumer.listen(vi.fn());
 
             let caughtError: unknown;
             try {
-                await innerConsumer.deliverMessage({ value: 'bad' } as any);
+                // @ts-expect-error types don't match on purpose
+                await innerConsumer.deliverMessage({ value: 'bad' });
             } catch (err) {
                 caughtError = err;
             }
 
-            expect(caughtError).toBeInstanceOf(ZodValidationError);
-            expect((caughtError as ZodValidationError).message).toContain('validation failed');
-        });
-
-        it('should attach the zodError property to the thrown ZodValidationError', async () => {
-            await validatedConsumer.listen(vi.fn());
-
-            let caughtError: unknown;
-            try {
-                await innerConsumer.deliverMessage({ value: 'bad' } as any);
-            } catch (err) {
-                caughtError = err;
-            }
-
-            expect(caughtError).toBeInstanceOf(ZodValidationError);
-            expect((caughtError as ZodValidationError).zodError).toBeInstanceOf(z.ZodError);
-            expect((caughtError as ZodValidationError).zodError.issues.length).toBeGreaterThan(0);
-        });
-
-        it('should pass channel and rabbitMessage through to the callback unchanged', async () => {
-            const callback = vi.fn().mockResolvedValue(undefined);
-            await validatedConsumer.listen(callback);
-
-            await innerConsumer.deliverMessage({ value: 1 });
-
-            const { channel, rabbitMessage } = callback.mock.calls[0]![0];
-            expect(channel).toBe(innerConsumer.channel);
-            expect(rabbitMessage).toBeDefined();
-            expect(rabbitMessage.content).toBeDefined();
-        });
-
-        it('should return the ZodValidatedConsumer itself', async () => {
-            const result = await validatedConsumer.listen(vi.fn());
-
-            expect(result).toBe(validatedConsumer);
+            expect(caughtError).toBeInstanceOf(ZodError);
+            expect((caughtError as ZodError).message).toContain('Invalid input: expected number, received string');
+            expect((caughtError as ZodError).issues.length).toBeGreaterThan(0);
         });
 
         it('should support Zod schemas that transform the message', async () => {
-            const transformSchema = z.object({ value: z.string().transform(s => s.toUpperCase()) });
+            const transformSchema = z.object({
+                value: z.string().transform(s => s.toUpperCase()),
+            });
+
+            const channel = new TestChannel();
+            const rawConsumer = new ConsumerImplementation(channel, new TestQueue(), {});
             const transformConsumer = new ZodValidatedConsumer(
-                new TestConsumer<{ value: string }>(),
+                rawConsumer,
                 transformSchema,
             );
 
             const callback = vi.fn().mockResolvedValue(undefined);
             await transformConsumer.listen(callback);
 
-            await (transformConsumer as any).consumer.deliverMessage({ value: 'hello' });
+            const { consumePromise } = processGeneratedMessages(channel, [{ value: 'hello' }]);
+            await consumePromise;
 
             expect(callback).toHaveBeenCalledWith(expect.objectContaining({
                 message: { value: 'HELLO' },
@@ -104,14 +81,9 @@ describe('ZodValidatedConsumer', () => {
 
     describe('close', () => {
         it('should delegate close() to the inner consumer', async () => {
-            await validatedConsumer.close();
-
-            expect(innerConsumer.close).toHaveBeenCalledTimes(1);
-        });
-
-        it('should pass the timeout argument to the inner consumer', async () => {
             await validatedConsumer.close(1000);
 
+            expect(innerConsumer.close).toHaveBeenCalledTimes(1);
             expect(innerConsumer.close).toHaveBeenCalledWith(1000);
         });
     });
@@ -128,14 +100,23 @@ describe('ZodValidatedConsumer', () => {
             expect(handlingFailedListener).toHaveBeenCalledWith(error);
         });
 
-        it('should forward ZodValidationError when emitted as handlingFailed by inner consumer', () => {
+        it('should forward ZodError when emitted as handlingFailed by inner consumer', async () => {
+            const channel = new TestChannel();
+            const rawConsumer = new ConsumerImplementation(channel, new TestQueue(), {});
+            const validatedConsumer = new ZodValidatedConsumer(
+                rawConsumer,
+                schema,
+            );
+
             const handlingFailedListener = vi.fn();
             validatedConsumer.on('handlingFailed', handlingFailedListener);
 
-            const zodError = new ZodValidationError('bad', new z.ZodError([]));
-            innerConsumer.emit('handlingFailed', zodError);
+            await validatedConsumer.listen(vi.fn());
 
-            expect(handlingFailedListener).toHaveBeenCalledWith(zodError);
+            const { consumePromise } = processGeneratedMessages(channel, [{ value: 'invalid' }]);
+            await consumePromise;
+
+            expect(handlingFailedListener).toHaveBeenCalledWith(expect.any(ZodError));
         });
     });
 

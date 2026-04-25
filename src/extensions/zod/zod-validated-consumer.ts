@@ -2,7 +2,6 @@ import { EventEmitter } from 'events';
 import { type z } from 'zod';
 import { ConsumerCallbackFn, Consumer } from '../../index';
 import { ConsumerEventMap } from '../../consumer/consumer';
-import { ZodValidationError } from './zod-validation-error';
 
 /**
  * Consumer wrapper that validates received messages using Zod.
@@ -58,13 +57,12 @@ export class ZodValidatedConsumer<InputMessage, AdditionalProperties, OutputMess
      * and calls the callback with the validated message.
      *
      * @param callback Callback to call when the message is validated.
-     * @throws ZodValidationError if the message is not valid.
      */
     async listen(callback: ConsumerCallbackFn<OutputMessage, AdditionalProperties>) {
         await this.consumer.listen(args => {
             const parsed = this.validator.safeParse(args.message);
             if (!parsed.success)
-                throw new ZodValidationError(`Message validation failed with errors`, parsed.error);
+                throw parsed.error;
             return callback({
                 ...args,
                 message: parsed.data,

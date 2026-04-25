@@ -59,7 +59,7 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
         const now = performance.now();
         debug('channel-error in-flight=%d', this.inFlight.size);
         for (const entry of this.inFlight) {
-            if (entry.expiresAt >= now) {
+            if (entry.expiresAt > now) {
                 // Remove from in-flight before retrying; if the republish fails it will be
                 // re-added to inFlight by the recursive publish() call.
                 this.inFlight.delete(entry);

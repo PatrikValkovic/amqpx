@@ -430,6 +430,23 @@ describe('Consumer', () => {
             expect(channel.nativeChannel.ack).toHaveBeenCalledWith(msg);
             expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
         });
+
+        it('should handle invalid failure strategy', async () => {
+            const consumerWithBadParser = new ConsumerImplementation<{ value: number }>(
+                channel,
+                new TestQueue(),
+                {
+                    // @ts-expect-error invalid strategy on purpose
+                    failureStrategy: 'invalid',
+                },
+            );
+            await consumerWithBadParser.listen(vi.fn().mockRejectedValue(new Error('testing error')));
+            const { consumePromise } = processGeneratedMessages(channel, 1);
+            await expect(consumePromise).rejects.toThrow('Not supported failure strategy: invalid');
+
+            expect(channel.nativeChannel.ack).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
+        });
     });
 
     describe('channel close', () => {
@@ -437,6 +454,29 @@ describe('Consumer', () => {
             vitest.useFakeTimers();
             // Use a short sleep so the message are acknowledge immediately
             const listener = vi.fn().mockImplementation(() => sleepPromise(500));
+            await consumer.listen(listener);
+
+            const { consumePromise: promise } = processGeneratedMessages(channel, 1);
+
+            await vitest.advanceTimersByTimeAsync(200);
+            // message still running
+            channel.emit('close');
+
+            await vitest.advanceTimersByTimeAsync(500);
+            // messages processed
+            await promise;
+
+            expect(channel.nativeChannel.ack).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.nack).not.toHaveBeenCalled();
+        });
+
+        it('should not ack/nack when channel closes during message processing error', async () => {
+            vitest.useFakeTimers();
+            // Use a short sleep so the message are acknowledge immediately
+            const listener = vi.fn().mockImplementation(async () => {
+                await sleepPromise(500);
+                throw new Error('Test error');
+            });
             await consumer.listen(listener);
 
             const { consumePromise: promise } = processGeneratedMessages(channel, 1);
