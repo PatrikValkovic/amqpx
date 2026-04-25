@@ -46,21 +46,26 @@ export class BatchConsumerImplementation<Message>
                 this.channel.native(),
                 this.queue.name(),
             ]);
-            this.channel.on('close', this.channelCloseCallback);
 
             debug('start-listening queue=%s prefetch=%d ack=%s', queueName, this.options.prefetch, !this.shouldAutoAck);
             await channel.prefetch(this.options.prefetch);
 
             // this must be an object, so it is passed down as reference
             const stillConnected = { value: true };
-            this.channel.once('close', () => {
+            let listenerCloseHandler: () => void;
+            const channelCloseHandler = () => {
                 debug(`channel-closed queue=%s`, queueName);
                 stillConnected.value = false;
-            });
-            this.once('close', () => {
-                stillConnected.value = false;
+                this.off('close', listenerCloseHandler);
+                this.channelCloseCallback();
+            };
+            listenerCloseHandler = () => {
                 debug(`catch-close-event queue=%s`, queueName);
-            });
+                stillConnected.value = false;
+                this.channel.off('close', channelCloseHandler);
+            };
+            this.channel.once('close', channelCloseHandler);
+            this.once('close', listenerCloseHandler);
 
             const amqpConsumer = await channel.consume(
                 queueName,

@@ -1,6 +1,10 @@
 import { ADMIN_URL } from './broker-urls';
 import { HTTPQueueDetail } from './types';
 
+/*
+ Source: https://www.rabbitmq.com/docs/http-api-reference
+*/
+
 const SHARED_OPTS = {
     method: 'GET',
     headers: {
