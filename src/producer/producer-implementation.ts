@@ -7,7 +7,6 @@ import { Producer, ProducerEventMap } from './producer';
 import {
     DEFAULT_PRODUCER_OPTIONS,
     InFlightEntry,
-    ProducerEvents,
     ProducerOptions,
     ProducerPublishOptions,
     RoutingKeyGenerator,
@@ -67,7 +66,7 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
                     .then(() => { /* ignore */ })
                     .catch(err => {
                         debug('republish-failed error=%s', errToMessage(err));
-                        this.emit(ProducerEvents.republishFailed, entry.message, err);
+                        this.emit('republishFailed', entry.message, err);
                     });
             }
         }
@@ -93,7 +92,7 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
         ]);
 
         debug('publish exchange=%s routing-key=%s', exchangeName, actualKey);
-        this.emit(ProducerEvents.beforeSend, message, buffer);
+        this.emit('beforeSend', message, buffer);
 
         const publishPromise = this.channel.publish(
             exchangeName,
@@ -124,7 +123,7 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
             });
         }
 
-        this.emit(ProducerEvents.afterSend, message, buffer);
+        this.emit('afterSend', message, buffer);
 
         return message;
     }

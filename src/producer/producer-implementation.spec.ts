@@ -1,7 +1,7 @@
 import { TestChannel, TestExchange } from '../extensions/vitest';
 import { externallyResolvedPromise } from '../utils';
 import { ProducerImplementation } from './producer-implementation';
-import { ProducerEvents } from './types';
+
 
 describe('Producer', () => {
     let channel: TestChannel;
@@ -54,7 +54,7 @@ describe('Producer', () => {
 
         it('should emit beforeSend event with message before calling channel.publish', async () => {
             const beforeSendListener = vi.fn();
-            producer.on(ProducerEvents.beforeSend, beforeSendListener);
+            producer.on('beforeSend', beforeSendListener);
 
             const message = { value: 10 };
             await producer.publish(message);
@@ -73,7 +73,7 @@ describe('Producer', () => {
 
         it('should emit afterSend event with message after channel.publish resolves', async () => {
             const afterSendListener = vi.fn();
-            producer.on(ProducerEvents.afterSend, afterSendListener);
+            producer.on('afterSend', afterSendListener);
 
             const message = { value: 20 };
             await producer.publish(message);
@@ -242,7 +242,7 @@ describe('Producer', () => {
             await producer.publish(message);
 
             const republishFailedListener = vi.fn();
-            producer.on(ProducerEvents.republishFailed, republishFailedListener);
+            producer.on('republishFailed', republishFailedListener);
 
             const republishError = new Error('republish failed');
             channel.publish.mockRejectedValue(republishError);

@@ -56,21 +56,6 @@ export const DEFAULT_PRODUCER_OPTIONS = {
     retryStrategy: DEFAULT_RETRY_STRATEGY,
 } as const satisfies Required<ProducerOptions<unknown>>;
 
-export const ProducerEvents = {
-    /**
-     * Emitted after a message has been serialized, before it is sent to RabbitMQ.
-     */
-    beforeSend: 'beforeSend',
-    /**
-     * Emitted after a message has been successfully sent to RabbitMQ.
-     */
-    afterSend: 'afterSend',
-    /**
-     * Emitted when an automatic republish attempt (triggered by a channel error) fails.
-     */
-    republishFailed: 'republishFailed',
-} as const;
-
 export type ProducerPublishOptions = amqp.Options.Publish & {
     /**
      * For confirmed publish only, how to retry publishing of the message if the message is rejected by the receiving queue.
