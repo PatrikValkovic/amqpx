@@ -25,7 +25,7 @@ import { ConsumerEventMap } from '../../consumer/consumer';
  * });
  *
  * consumer.on('handlingFailed', error => {
- *     if(error instanceof ZodValidationError) {
+ *     if(error instanceof ZodError) {
  *         // do something
  *     }
  * });

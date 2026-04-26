@@ -6,6 +6,7 @@ export {
     ConsumptionFailureStrategy,
     ConsumerOptions,
     ConsumerCallbackFn,
+    BatchConsumerCallbackFn,
     BatchConsumerOptions,
     BatchConsumerCallbackArgs,
     BatchFailureStrategy,
