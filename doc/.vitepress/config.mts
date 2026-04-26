@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'amqpx',
-  description: 'OOP wrapper over amqplib for RabbitMQ',
+  description: 'Wrapper around amqplib with retries, topology, batching, and validation',
   base: '/amqpx/',
   outDir: '../doc_build',
 
