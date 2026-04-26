@@ -33,7 +33,7 @@ const addJitter = (delay: number, jitterFactor: number) => {
 };
 
 /**
- * Returns `delay` in each step, ignoring step number, turning this strategy into constant delays with random jitter.
+ * Returns a constant `delay` on every step, regardless of the step number.
  * @param delay Delay in ms.
  * @param jitter Jitter factor in [0, 1]. Randomizes the delay within ±`jitter * delay`. Use `0` to disable jitter.
  */
@@ -41,9 +41,9 @@ export const linearBackoff = (delay: number, jitter = 0.25) =>
     (_step: number) => addJitter(delay, jitter);
 
 /**
- * Increase the value each step using formula `multiplier * base^step`.
- * For `base=2` and `multiplier=100` will result in series: 100, 200, 400, 800, ...
- * @param multiplier Multiplier of the function, specifying the delay in the first step. Default is 100.
+ * Increases the delay each step using the formula `multiplier * base^(step-1)`.
+ * For `base=2` and `multiplier=100` results in the series: 100, 200, 400, 800, ...
+ * @param multiplier Multiplier of the function, specifying the delay at the first step. Default is 100.
  * @param base Base of the exponential function. Default is 2, resulting in doubling the time each step.
  * @param jitter Jitter factor in [0, 1]. Randomizes the delay within ±`jitter * delay`. Use `0` to disable jitter.
  */
@@ -54,10 +54,10 @@ export const exponentialBackoff = (multiplier: number, base = 2, jitter = 0.25) 
     };
 
 /**
- * Increase the value each step using formula `multiplier * base^step`, capped at `maxDelay`.
+ * Increases the delay each step using the formula `multiplier * base^(step-1)`, capped at `maxDelay`.
  * Behaves identically to {@link exponentialBackoff} but clamps the result to `maxDelay` before applying jitter.
- * For `base=2`, `multiplier=100`, and `maxDelay=500` will result in series: 100, 200, 400, 500, 500, ...
- * @param multiplier Multiplier of the function, specifying the delay in the first step.
+ * For `base=2`, `multiplier=100`, and `maxDelay=500` results in the series: 100, 200, 400, 500, 500, ...
+ * @param multiplier Multiplier of the function, specifying the delay at the first step.
  * @param maxDelay Maximum delay in ms. The raw exponential value is clamped to this before jitter is applied.
  * @param base Base of the exponential function. Default is 2, resulting in doubling the time each step.
  * @param jitter Jitter factor in [0, 1]. Randomizes the delay within ±`jitter * delay`. Use `0` to disable jitter.
@@ -69,9 +69,9 @@ export const cappedExponentialBackoff = (multiplier: number, maxDelay: number, b
     };
 
 /**
- * Increase the value each step using formula `multiplier * step^exponent`.
- * For `exponent=2` (quadratic) and `multiplier=100` will result in series: 100, 400, 900, 1600, ...
- * @param multiplier Multiplier of the function, specifying the delay in the first step.
+ * Increases the delay each step using the formula `multiplier * step^exponent`.
+ * For `exponent=2` (quadratic) and `multiplier=100` results in the series: 100, 400, 900, 1600, ...
+ * @param multiplier Multiplier of the function, specifying the delay at the first step.
  * @param exponent Exponent of the polynomial. Default is 2 (quadratic).
  * @param jitter Jitter factor in [0, 1]. Randomizes the delay within ±`jitter * delay`. Use `0` to disable jitter.
  */
@@ -82,10 +82,10 @@ export const polynomialBackoff = (multiplier: number, exponent = 2, jitter = 0.2
     };
 
 /**
- * Increase the value each step following the Fibonacci sequence scaled by `multiplier`.
- * Results in series: `multiplier * 1, multiplier * 1, multiplier * 2, multiplier * 3, multiplier * 5, ...`
+ * Increases the delay each step following the Fibonacci sequence scaled by `multiplier`.
+ * Results in the series: `multiplier * 1, multiplier * 1, multiplier * 2, multiplier * 3, multiplier * 5, ...`
  * Grows slower than exponential, useful when exponential backoff is too aggressive.
- * @param multiplier Scale factor applied to each Fibonacci number. Specifying the delay at step 1.
+ * @param multiplier Scale factor applied to each Fibonacci number, specifying the delay at step 1.
  * @param jitter Jitter factor in [0, 1]. Randomizes the delay within ±`jitter * delay`. Use `0` to disable jitter.
  */
 export const fibonacciBackoff = (multiplier: number, jitter = 0.25) =>

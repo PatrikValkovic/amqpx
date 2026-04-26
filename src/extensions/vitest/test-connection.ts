@@ -9,9 +9,9 @@ import { TestBatchConsumer } from './test-batch-consumer';
  * Mock implementation of Connection using vitest mocks.
  *
  * The connection is instantly connected and all `create*` methods return
- * test classes from this package. Non-creation methods returns default
- * mock implementations returning undefined (or the same instance if semantic
- * of the method requires so.
+ * test classes from this package. Non-creation methods return default
+ * mock implementations returning undefined (or the same instance if the semantic
+ * of the method requires so).
  *
  * @example
  * ```ts
@@ -59,6 +59,9 @@ export class TestConnection extends EventEmitter implements Connection {
 
     state = vitest.fn().mockReturnValue(ConnectionState.connected);
 
+    /**
+     * Simulates a server-side disconnect by emitting the `reconnecting` event.
+     */
     simulateDisconnect(): void {
         this.emit('reconnecting');
     }

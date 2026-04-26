@@ -6,34 +6,30 @@ import { retryStrategies } from './index';
 
 
 /**
- * Retry strategy allowing to specify gaps between retries and maximum
- * number of retries.
+ * Retry strategy that controls the delay between attempts and the maximum number of retries.
  *
- * Gaps may be specified constantly or dynamically, using time strategies
- * accessible from {@link retryStrategies}.
+ * Delays may be fixed or dynamic, using the time strategies accessible from {@link retryStrategies}.
  */
 export interface RetryStrategy {
     /**
-     * How much time to wait before next attempt to reconnect in ms.
-     * May be number (it will wait specified amount of ms between reconnects) or time strategy
-     * accessible from {@link retryStrategies}.
+     * Delay before the next retry attempt, in milliseconds.
+     * Can be a fixed number or a {@link TimeStrategy} function from {@link retryStrategies} for dynamic backoff.
      */
     reconnectionTimeoutMs?: number | TimeStrategy;
 
     /**
-     * Maximum number the connection tries to reconnect.
-     * After this number of attempts, the connection will be closed.
+     * Maximum number of retry attempts.
+     * After this many failed attempts, a `TooManyRetriesError` is thrown.
      */
     maxRetries?: number;
 }
 
 /**
- * Normalizes retry strategy to have all properties defined.
- * Missing properties will be taken from the default retry strategy. See {@link DEFAULT_RETRY_STRATEGY} for default values.
+ * Normalizes a retry strategy so that all properties are defined.
+ * Missing properties are filled in from {@link DEFAULT_RETRY_STRATEGY}.
+ * Always converts `reconnectionTimeoutMs` to a {@link TimeStrategy} function.
  *
- * It will always turn reconnectionTimeoutMs into ITimeStrategy.
- *
- * @param retryStrategy Retry strategy to normalize.
+ * @param retryStrategy - Retry strategy to normalize.
  */
 export const normalizeRetryStrategy = (retryStrategy: RetryStrategy): Required<Omit<RetryStrategy, 'reconnectionTimeoutMs'>> & { reconnectionTimeoutMs: TimeStrategy } => {
     const mergedWithDefault = {

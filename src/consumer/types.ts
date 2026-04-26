@@ -7,13 +7,11 @@ import { MaybePromise } from '../types';
  */
 export enum ConsumptionFailureStrategy {
     /**
-     * It will acknowledge the message as successful.
-     * This effectively turns on auto acknowledgement if
-     * prefetch is zero.
+     * Acknowledges the message as successfully processed even when the handler throws.
      */
     Drop = 'Drop',
     /**
-     * Message is rejected and moved back into the queue, so different consumer can process it again.
+     * Rejects the message and returns it to the queue, so a different consumer can process it again.
      */
     Requeue = 'Requeue',
     /**
@@ -27,8 +25,8 @@ export enum ConsumptionFailureStrategy {
  */
 export enum BatchFailureStrategy  {
     /**
-     * Reject the whole batch, the consumer will not try to reprocess the messages.
-     * Each message in the batch is process according to the `failureStrategy` property.
+     * Reject the whole batch; the consumer will not try to reprocess the messages.
+     * Each message in the batch is processed according to the `failureStrategy` property.
      */
     Fail = 'Fail',
     /**
@@ -38,7 +36,7 @@ export enum BatchFailureStrategy  {
      *
      * If the processing of the message fails again, it is handled according to the `failureStrategy` property.
      *
-     * Split strategy is not supported when batch size is equal 1.
+     * Split strategy is not supported when the batch size is equal to 1.
      */
     Split = 'Split',
 }
@@ -58,6 +56,11 @@ export type ConsumerCallbackArgs<Message, AdditionalProperties = Record<string, 
     rabbitMessage: amqp.Message;
 } & AdditionalProperties;
 
+/**
+ * Arguments passed to a batch consumer callback.
+ * Contains the channel and an array of message entries, each holding the parsed payload,
+ * the raw amqplib message, and any additional properties added by the consumer implementation.
+ */
 export type BatchConsumerCallbackArgs<Message, AdditionalProperties = Record<string, unknown>> = {
     channel: Channel;
     messages: Array<{
@@ -68,15 +71,19 @@ export type BatchConsumerCallbackArgs<Message, AdditionalProperties = Record<str
 
 export type ConsumerCallbackFn<Message, AdditionalProperties = Record<string, unknown>> = (args: ConsumerCallbackArgs<Message, AdditionalProperties>) => MaybePromise<void>;
 
+/**
+ * Callback function type for a batch consumer handler.
+ * Receives a batch of messages along with their raw amqplib payloads and the channel.
+ */
 export type BatchConsumerCallbackFn<Message, AdditionalProperties = Record<string, unknown>> = (args: BatchConsumerCallbackArgs<Message, AdditionalProperties>) => MaybePromise<void>;
 
 export type ConsumerOptions<T> = {
     /**
-     * How to handle Rabbit message when the processing fails (throws error).
+     * How to handle a RabbitMQ message when the handler throws an error.
      * Options are:
-     * - Drop: it will acknowledge the message as successful. This effectively turns on auto acknowledgement.
-     * - Reject: message is rejected and moved into dead letter queue if configured on the consuming queue.
-     * - Requeue: message is rejected and moved back into the queue, so different consumer can process it again.
+     * - Drop: acknowledges the message as successfully processed even when the handler throws.
+     * - Requeue: rejects the message and returns it to the queue so a different consumer can process it.
+     * - Reject: rejects the message and moves it to the dead letter queue if one is configured.
      */
     failureStrategy?: ConsumptionFailureStrategy;
     /**
@@ -91,14 +98,17 @@ export type ConsumerOptions<T> = {
      */
     consumeOptions?: Omit<amqp.Options.Consume, 'noAck'>;
     /**
-     * How many messages the RabbitMQ broke can send to the consumer in parallel.
-     * This effectively controls concurrency of the consumer.
-     * By default is 0, which indicates rabbit can send as many messages as it wants.
+     * How many messages the RabbitMQ broker can send to the consumer in parallel.
+     * This effectively controls the concurrency of the consumer.
+     * Defaults to 0, which means the broker can send as many messages as it wants.
      *
-     * Warning: prefetch is configured on channel. It is recommended to use different channel
-     * per consumer, so different prefetches per consumer don't influence each other.
+     * Warning: prefetch is configured on the channel. It is recommended to use a separate channel
+     * per consumer so that different prefetch values do not interfere with each other.
      */
     prefetch?: number;
+    /**
+     * Channel to use for consuming. If `null` (default), a new dedicated channel is created.
+     */
     channel?: Channel | null;
 };
 
@@ -157,10 +167,10 @@ export type BatchConsumerOptions<T> = ConsumerOptions<T> & {
      */
     maxWaitTimeForAck?: number;
     /**
-     * How to handle batch of messages when processing fails (throws error).
+     * How to handle a batch of messages when processing fails (throws error).
      * Options are:
-     * - Reject: reject the whole batch, the consumer will not try to reprocess the messages.
-     * - Split: split the batch into individual messages and try to process each message separately.
+     * - Fail: reject the whole batch; the consumer will not try to reprocess the messages.
+     * - Split: split the batch into individual messages and try to process each one separately.
      */
     batchFailureStrategy?: BatchFailureStrategy;
 };

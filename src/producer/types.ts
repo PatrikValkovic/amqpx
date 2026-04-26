@@ -32,7 +32,7 @@ export type ProducerOptions<T> = {
     drainTimeout?: number;
     /**
      * During publishing, the channel may fail but the publisher won't receive info about it until later (e.g. by closing the channel).
-     * This variable specifies a window in milliseconds. If the publisher receives an error from RabbitMQ, it considers
+     * This property specifies a window in milliseconds. If the publisher receives an error from RabbitMQ, it considers
      * all messages sent within that window as not delivered and will try to deliver them again.
      * Note: this may result in more-than-once delivery. Set to `0` to disable this behavior entirely.
      * Defaults to 5000ms.

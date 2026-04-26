@@ -5,8 +5,8 @@ import { TestConsumer, TestBatchConsumer, TestExchange, TestProducer, TestQueue,
  * Mock implementation of Channel using jest mocks.
  *
  * The channel is instantly connected and all `create*` methods return
- * test classes from this package. Non-creation methods returns default
- * mock implementations returning undefined (or the same instance if semantic
+ * test classes from this package. Non-creation methods return default
+ * mock implementations returning undefined (or the same instance if the semantic
  * of the method requires so).
  *
  * @example
@@ -16,7 +16,7 @@ import { TestConsumer, TestBatchConsumer, TestExchange, TestProducer, TestQueue,
  * const connection = new TestConnection();
  *
  * const channel = connection.createChannel();
- * // or new TestConnection();
+ * // or new TestChannel();
  *
  * const exchange = channel.createExchange();
  *
@@ -111,14 +111,23 @@ export class TestChannel extends EventEmitter implements Channel {
         consumerCount: 0,
     }));
 
+    /**
+     * Simulates a channel close by emitting the `close` event.
+     */
     simulateClose(): void {
         this.emit('close');
     }
 
+    /**
+     * Simulates write-buffer backpressure. Subsequent `publish` calls will not resolve until {@link releaseDrain} is called.
+     */
     simulateDrainBackpressure(): void {
         this._drainPending = true;
     }
 
+    /**
+     * Releases simulated backpressure, resolves all pending `publish` calls, and emits the `drain` event.
+     */
     releaseDrain(): void {
         this._drainPending = false;
         const resolvers = this._drainResolvers.splice(0);

@@ -17,52 +17,52 @@ export interface Exchange {
     assert(): Promise<Exchange>;
 
     /**
-     * Return name of the exchange.
-     * This call will also assert the exchange if not asserted yet before it returns.
+     * Returns the name of the exchange.
+     * Asserts the exchange first if it has not been asserted yet.
      */
     name(): Promise<string>;
 
     /**
      * Bind a queue to this exchange.
-     * This call may assert the current exchange if it's not asserted yet.
-     * @param queue Queue to bind to the current exchange.
-     * @param pattern Routing key under which to bind.
-     * @param args
+     * Asserts the exchange first if it has not been asserted yet.
+     * @param queue - Queue to bind to this exchange.
+     * @param pattern - Routing key pattern under which to bind.
+     * @param args - Optional AMQP headers or x-arguments for the binding.
      */
     bindQueue(queue: Queue, pattern: string, args?: BindingArgs): Promise<Exchange>;
 
     /**
      * Bind another exchange to this exchange.
-     * This call may assert the current exchange if it's not asserted yet.
-     * @param exchange Exchange to bind to the current exchange.
-     * @param pattern Routing key under which to bind.
-     * @param args
+     * Asserts the exchange first if it has not been asserted yet.
+     * @param exchange - Exchange to bind to this exchange.
+     * @param pattern - Routing key pattern under which to bind.
+     * @param args - Optional AMQP headers or x-arguments for the binding.
      */
     bindExchange(exchange: Exchange, pattern: string, args?: BindingArgs): Promise<Exchange>;
 
     /**
-     * Create consumer for current exchange.
-     * It will create exclusive queue and bind it to the exchange.
+     * Creates a consumer for the current exchange.
+     * Internally asserts an exclusive queue and binds it to the exchange.
      * Unless specified otherwise, uses the same channel as was used to declare the exchange.
-     * This is generally not recommended, as each producer/consumer should have separate channels.
-     * Consider using `connection.createConsumerForExchange` method.
+     * This is generally not recommended, as each consumer should have its own dedicated channel.
+     * Consider using `connection.createConsumerForExchange` instead.
      */
     createConsumer<T>(options: ExchangeConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>>;
 
     /**
-     * Create batch consumer for current exchange.
-     * It will create exclusive queue and bind it to the exchange.
+     * Creates a batch consumer for the current exchange.
+     * Internally asserts an exclusive queue and binds it to the exchange.
      * Unless specified otherwise, uses the same channel as was used to declare the exchange.
-     * This is generally not recommended, as each producer/consumer should have separate channels.
-     * Consider using `connection.createBatchConsumerForExchange` method.
+     * This is generally not recommended, as each consumer should have its own dedicated channel.
+     * Consider using `connection.createBatchConsumerForExchange` instead.
      */
     createBatchConsumer<T>(options: ExchangeBatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>>;
 
     /**
-     * Create producer for current exchange.
+     * Creates a producer for the current exchange.
      * Unless specified otherwise, uses the same channel as was used to declare the exchange.
-     * This is generally not recommended, as each producer/consumer should have separate channels.
-     * Consider using `connection.createProducerForExchange` method.
+     * This is generally not recommended, as each producer should have its own dedicated channel.
+     * Consider using `connection.createProducerForExchange` instead.
      */
     createProducer<T>(options?: ProducerOptions<T>): Promise<Producer<T>>;
 }

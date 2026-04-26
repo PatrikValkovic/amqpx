@@ -3,7 +3,13 @@
  * as defined by the configured {@link RetryStrategy}.
  */
 export class TooManyRetriesError extends Error {
-    constructor(message: string, public readonly cause: unknown) {
+    constructor(
+        message: string,
+        /**
+         * The last error thrown by the retried operation before retries were exhausted.
+         */
+        public readonly cause: unknown,
+    ) {
         super(message);
     }
 }

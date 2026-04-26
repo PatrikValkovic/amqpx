@@ -2,9 +2,9 @@ import { RetryStrategy } from './retry-strategy';
 import { exponentialBackoff } from './time-strategies';
 
 /**
- * Default retry strategy that is used thorough *amqpx* library, if user doesn't provide its own.
+ * Default retry strategy used throughout the library when the user does not provide their own.
  *
- * It will by default retry 10 times, with exponential delay between retries.
+ * Retries up to 10 times with exponential backoff starting at 100ms.
  */
 export const DEFAULT_RETRY_STRATEGY = {
     maxRetries: 10,

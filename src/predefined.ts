@@ -55,7 +55,7 @@ export const headersExchange = (channel: Channel): Exchange => new ExchangeImple
 
 /**
  * This will create a match exchange that is created by default by RabbitMQ container.
- * Behaves same as headers exchange, but has different name.
+ * Behaves the same as headers exchange, but has a different name.
  *
  * The match exchange has name *amqp.match*, is durable, and has type *match*.
  *

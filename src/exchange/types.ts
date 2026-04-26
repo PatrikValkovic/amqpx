@@ -5,24 +5,33 @@ import { Queue } from '../queue';
 import { Exchange } from './exchange';
 
 /**
- * ExchangeTypes
+ * The type of exchange to create. Accepted values: `'direct'`, `'fanout'`, `'topic'`, `'headers'`, `'match'`.
  *
- * @description
- * The type of exchange to create. Can be one of: 'direct', 'fanout', 'topic', 'headers', 'match'.
+ * Passed as the second argument to `channel.assertExchange` in the amqplib API.
  *
- * This is the type that is passed as second parameter to `channel.assertExchange` method of amqplib library.
- *
- * @see * https://amqp-node.github.io/amqplib/channel_api.html
+ * @see https://amqp-node.github.io/amqplib/channel_api.html
  */
 export type ExchangeTypes = Parameters<amqp.Channel['assertExchange']>[1];
 
+/**
+ * Options for the auto-created exclusive queue when consuming from an exchange.
+ * The `durable` and `exclusive` fields are omitted because they are managed internally.
+ */
 export type ExchangeConsumerQueueOptions = Omit<amqp.Options.AssertQueue, 'durable' | 'exclusive'>;
 
 export type ExchangeConsumerBindingOptions = {
     pattern: string;
     bindingArgs?: BindingArgs;
 };
+/**
+ * Options for consuming messages from an exchange.
+ * Combines binding options (`pattern`, optional `bindingArgs`) with standard {@link ConsumerOptions}.
+ */
 export type ExchangeConsumerOptions<T> = ExchangeConsumerBindingOptions & ConsumerOptions<T>;
+/**
+ * Options for batch-consuming messages from an exchange.
+ * Combines binding options (`pattern`, optional `bindingArgs`) with standard {@link BatchConsumerOptions}.
+ */
 export type ExchangeBatchConsumerOptions<T> = ExchangeConsumerBindingOptions & BatchConsumerOptions<T>;
 
 export type BindingArgs = Record<string, string | number | boolean>;

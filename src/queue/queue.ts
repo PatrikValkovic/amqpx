@@ -17,17 +17,17 @@ export interface Queue {
     assert(): Promise<Queue>;
 
     /**
-     * Return name of the queue.
-     * This call will also assert the queue if not asserted yet before it returns.
+     * Returns the name of the queue.
+     * Asserts the queue first if it has not been asserted yet.
      */
     name(): Promise<string>;
 
     /**
      * Bind this queue to an exchange.
-     * This call may assert the current queue if it's not asserted yet.
-     * @param exchange Exchange to bind this queue to.
-     * @param pattern Routing key under which to bind.
-     * @param args
+     * Asserts the queue first if it has not been asserted yet.
+     * @param exchange - Exchange to bind this queue to.
+     * @param pattern - Routing key pattern under which to bind.
+     * @param args - Optional AMQP headers or x-arguments for the binding.
      */
     bindExchange(exchange: Exchange, pattern: string, args?: BindingArgs): Promise<Queue>;
 

@@ -11,9 +11,9 @@ import { TestChannel } from './test-channel';
  * You can assert the parameters with which was this method called to assert
  * `listen` method was called.
  *
- * `getQueue` and `getChannel` methods return new instances of TestQueue and
+ * `queue` and `channel` properties are new instances of TestQueue and
  * TestChannel respectively. All other methods are vitest mocks returning
- * void or current instance, depending on the method semantic.
+ * void or the current instance, depending on the method semantic.
  *
  * @example
  * ```ts
@@ -48,6 +48,12 @@ export class TestConsumer<T> extends EventEmitter implements Consumer<T> {
 
     channel = new TestChannel();
 
+    /**
+     * Simulates a message arriving from RabbitMQ by invoking the most recently registered listener.
+     * Throws if `listen` has not been called yet.
+     * @param message - The parsed message payload to deliver.
+     * @param options - Optional serialization override and raw amqplib message field overrides.
+     */
     async deliverMessage(
         message: T,
         options: { serialize?(msg: T): Buffer } & Omit<Partial<amqp.ConsumeMessage>, 'content'> = {},

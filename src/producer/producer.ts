@@ -27,15 +27,21 @@ export interface ProducerEventMap<WholeMessage> {
  */
 export interface Producer<T, WholeMessage = T> extends EventEmitter<ProducerEventMap<WholeMessage>> {
 
+    /**
+     * Stops accepting new publishes and waits for all pending publish operations to settle.
+     */
     close(): Promise<void>;
 
     /**
-     * Publish message into the RabbitMQ.
-     * @param message Message to publish. Producer implementation may add more properties into the message.
-     * @param routingKey Either string of generator that accepts the message and returns its routing key.
-     * @param options Publish options.
+     * Publishes a message to RabbitMQ.
+     * @param message - Message to publish. The producer implementation may augment it with additional properties.
+     * @param routingKey - Either a static routing key string, or a generator function that derives the key from the message.
+     * @param options - Per-publish options such as a retry strategy override.
      */
     publish(message: T, routingKey?: RoutingKeyGenerator<T>, options?: ProducerPublishOptions): Promise<WholeMessage>;
 
+    /**
+     * The channel used by this producer for publishing.
+     */
     get channel(): Channel;
 }

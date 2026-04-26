@@ -1,3 +1,7 @@
+/**
+ * A value that is either already resolved (`T`) or wrapped in a `Promise<T>`.
+ * Used throughout the library to accept both synchronous and asynchronous callbacks.
+ */
 export type MaybePromise<T> = Promise<T> | T;
 
 /**

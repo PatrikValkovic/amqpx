@@ -47,6 +47,12 @@ export class TestBatchConsumer<T> extends EventEmitter implements BatchConsumer<
 
     channel = new TestChannel();
 
+    /**
+     * Simulates a batch of messages arriving from RabbitMQ by invoking the most recently registered listener.
+     * Throws if `listen` has not been called yet.
+     * @param messages - Array of parsed message payloads to deliver as a single batch.
+     * @param options - Optional serialization override and raw amqplib message field overrides applied to each message.
+     */
     async deliverMessages(
         messages: T[],
         options: { serialize?(msg: T): Buffer } & Omit<Partial<amqp.ConsumeMessage>, 'content'> = {},

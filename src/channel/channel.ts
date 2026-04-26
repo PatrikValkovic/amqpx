@@ -79,7 +79,7 @@ export interface Channel extends EventEmitter<ChannelEventMap> {
     checkQueue(name: string): Promise<Replies.AssertQueue>;
 
     /**
-     * Get native channel of amqplib. Will call connect if the channel is not yet created.
+     * Returns the underlying amqplib channel, connecting first if not already open.
      * This is intended for internal use.
      */
     native(): Promise<amqp.Channel | amqp.ConfirmChannel>;
@@ -100,8 +100,8 @@ export interface Channel extends EventEmitter<ChannelEventMap> {
 
     /**
      * Create a producer that publishes directly to a queue using this channel.
-     * Each producer should have its own dedicated channel; this method use current
-     * channel. Consider using `connection.createProducerForQueue` or pass channel
+     * Each producer should have its own dedicated channel; this method uses the current
+     * channel. Consider using `connection.createProducerForQueue` or pass a channel
      * in `options` param.
      *
      * @param queue - Target queue.
@@ -111,8 +111,8 @@ export interface Channel extends EventEmitter<ChannelEventMap> {
 
     /**
      * Create a producer that publishes to an exchange using this channel.
-     * Each producer should have its own dedicated channel; this method use current
-     * channel. Consider using `connection.createProducerForExchange` or pass channel
+     * Each producer should have its own dedicated channel; this method uses the current
+     * channel. Consider using `connection.createProducerForExchange` or pass a channel
      * in `options` param.
      *
      * @param exchange - Target exchange.
@@ -122,8 +122,8 @@ export interface Channel extends EventEmitter<ChannelEventMap> {
 
     /**
      * Create a consumer that reads from a queue using this channel.
-     * Each consumer should have its own dedicated channel; this method use current
-     * channel. Consider using `connection.createConsumerForQueue` or pass channel
+     * Each consumer should have its own dedicated channel; this method uses the current
+     * channel. Consider using `connection.createConsumerForQueue` or pass a channel
      * in `options` param.
      *
      * @param queue - Source queue.
@@ -134,20 +134,20 @@ export interface Channel extends EventEmitter<ChannelEventMap> {
     /**
      * Create a consumer that reads from an exchange using this channel.
      * Internally asserts an exclusive queue and binds it to the exchange.
-     * Each consumer should have its own dedicated channel; this method use current
-     * channel. Consider using `connection.createConsumerForExchange` or pass channel
+     * Each consumer should have its own dedicated channel; this method uses the current
+     * channel. Consider using `connection.createConsumerForExchange` or pass a channel
      * in `options` param.
      *
      * @param exchange - Source exchange.
-     * @param options - Optional consumer options (failure strategy, prefetch, …).
+     * @param options - Consumer options including the binding pattern.
      * @param queueOptions - Options for the auto-created exclusive queue binding.
      */
     createConsumerForExchange<T>(exchange: Exchange, options: ExchangeConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>>;
 
     /**
      * Create a batch consumer that reads from a queue using this channel.
-     * Each consumer should have its own dedicated channel; this method use current
-     * channel. Consider using `connection.createBatchConsumerForQueue` or pass channel
+     * Each consumer should have its own dedicated channel; this method uses the current
+     * channel. Consider using `connection.createBatchConsumerForQueue` or pass a channel
      * in `options` param.
      *
      * @param queue - Source queue.
@@ -158,12 +158,12 @@ export interface Channel extends EventEmitter<ChannelEventMap> {
     /**
      * Create a batch consumer that reads from an exchange using this channel.
      * Internally asserts an exclusive queue and binds it to the exchange.
-     * Each consumer should have its own dedicated channel; this method use current
-     * channel. Consider using `connection.createBatchConsumerForExchange` or pass channel
+     * Each consumer should have its own dedicated channel; this method uses the current
+     * channel. Consider using `connection.createBatchConsumerForExchange` or pass a channel
      * in `options` param.
      *
      * @param exchange - Source exchange.
-     * @param options - Optional batch consumer options (batch size, failure strategy, prefetch, …).
+     * @param options - Batch consumer options including the binding pattern.
      * @param queueOptions - Options for the auto-created exclusive queue binding.
      */
     createBatchConsumerForExchange<T>(exchange: Exchange, options: ExchangeBatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>>;

@@ -28,7 +28,7 @@ export enum ConnectionState {
      */
     closing = 'closing',
     /**
-     * The connection is being closed.
+     * The connection is fully closed.
      */
     closed = 'closed',
 }
@@ -99,29 +99,45 @@ export interface Connection extends EventEmitter<ConnectionEventMap> {
     createChannel(isConfirmed?: boolean): Channel;
 
     /**
-     * Create producer for queue and create new channel for it.
+     * Creates a producer for a queue and opens a dedicated channel for it.
+     * @param queue - Target queue.
+     * @param options - Optional producer options (serialization, routing key, hooks, …).
+     * @param isConfirmed - If true, the dedicated channel uses publisher confirms.
      */
     createProducerForQueue<T>(queue: Queue, options?: ProducerOptions<T>, isConfirmed?: boolean): Promise<Producer<T>>;
     /**
-     * Create producer for exchange and create new channel for it.
+     * Creates a producer for an exchange and opens a dedicated channel for it.
+     * @param exchange - Target exchange.
+     * @param options - Optional producer options (serialization, routing key, hooks, …).
+     * @param isConfirmed - If true, the dedicated channel uses publisher confirms.
      */
     createProducerForExchange<T>(exchange: Exchange, options?: ProducerOptions<T>, isConfirmed?: boolean): Promise<Producer<T>>;
     /**
-     * Create consumer of queue and create new channel for it.
+     * Creates a consumer for a queue and opens a dedicated channel for it.
+     * @param queue - Source queue.
+     * @param options - Optional consumer options (failure strategy, prefetch, …).
      */
     createConsumerForQueue<T>(queue: Queue, options?: ConsumerOptions<T>): Promise<Consumer<T>>;
     /**
-     * Create consumer for exchange and create new channel for it.
-     * It will create exclusive queue and bind it to the exchange.
+     * Creates a consumer for an exchange and opens a dedicated channel for it.
+     * Internally asserts an exclusive queue and binds it to the exchange.
+     * @param exchange - Source exchange.
+     * @param options - Consumer options, including the binding pattern.
+     * @param queueOptions - Options for the auto-created exclusive queue.
      */
     createConsumerForExchange<T>(exchange: Exchange, options: ExchangeConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>>;
     /**
-     * Create batch consumer of queue and create new channel for it.
+     * Creates a batch consumer for a queue and opens a dedicated channel for it.
+     * @param queue - Source queue.
+     * @param options - Optional batch consumer options (batch size, failure strategy, prefetch, …).
      */
     createBatchConsumerForQueue<T>(queue: Queue, options?: BatchConsumerOptions<T>): Promise<BatchConsumer<T>>;
     /**
-     * Create batch consumer for exchange and create new channel for it.
-     * It will create exclusive queue and bind it to the exchange.
+     * Creates a batch consumer for an exchange and opens a dedicated channel for it.
+     * Internally asserts an exclusive queue and binds it to the exchange.
+     * @param exchange - Source exchange.
+     * @param options - Batch consumer options, including the binding pattern.
+     * @param queueOptions - Options for the auto-created exclusive queue.
      */
     createBatchConsumerForExchange<T>(exchange: Exchange, options: ExchangeBatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>>;
 

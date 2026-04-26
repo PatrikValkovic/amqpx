@@ -5,8 +5,8 @@ import { TestChannel } from './test-channel';
 /**
  * Test implementation of Producer using vitest mocks.
  *
- * `publish` method instantly returns message from parameter and wrap it
- * into Promise. `getChannel` method returns new instance of TestChannel.
+ * `publish` method instantly returns the message argument wrapped in a Promise.
+ * `channel` property is a new TestChannel instance.
  *
  * @example
  * ```ts
@@ -35,6 +35,9 @@ export class TestProducer<T> extends EventEmitter implements Producer<T> {
 
     channel = new TestChannel();
 
+    /**
+     * Returns the first argument (the message payload) from every `publish` call recorded so far.
+     */
     getPublishedMessages(): T[] {
         return this.publish.mock.calls.map(([msg]) => msg as T);
     }
