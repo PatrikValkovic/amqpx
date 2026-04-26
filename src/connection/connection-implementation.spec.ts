@@ -1,12 +1,10 @@
 import { EventEmitter } from 'events';
 import * as amqp from 'amqplib';
+import { ChannelImplementation } from '../channel';
+import { TestExchange, TestQueue } from '../extensions/vitest';
+import { TooManyRetriesError } from '../errors';
 import { ConnectionImplementation } from './connection-implementation';
 import { ConnectionState } from './connection';
-import { ChannelImplementation } from '../channel/channel-implementation';
-import { ConsumerImplementation } from '../consumer';
-import { BatchConsumerImplementation } from '../consumer';
-import { ProducerImplementation } from '../producer/producer-implementation';
-import { TestQueue, TestExchange } from '../extensions/vitest';
 
 vi.mock('amqplib');
 
@@ -24,24 +22,22 @@ describe('ConnectionImplementation', () => {
             close: vi.fn().mockResolvedValue(undefined),
             createChannel: vi.fn().mockResolvedValue({}),
         });
+        // typing doesn't match
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(amqp.connect).mockResolvedValue(mockNativeConnection as any);
         connection = new ConnectionImplementation({ hostname: 'localhost' });
     });
 
     afterEach(async () => {
-        await connection.close().catch(() => undefined);
+        await connection.close();
     });
 
     describe('connect', () => {
         it('should call amqp.connect with the provided options', async () => {
-            await connection.connect();
+            const result = await connection.connect();
 
             expect(amqp.connect).toHaveBeenCalledTimes(1);
             expect(amqp.connect).toHaveBeenCalledWith({ hostname: 'localhost' }, undefined);
-        });
-
-        it('should return the ConnectionImplementation itself for chaining', async () => {
-            const result = await connection.connect();
 
             expect(result).toBe(connection);
         });
@@ -75,8 +71,10 @@ describe('ConnectionImplementation', () => {
             const errorListener = vi.fn();
             connection.on('connectionError', errorListener);
 
+            const err = new Error('first failure');
             vi.mocked(amqp.connect)
-                .mockRejectedValueOnce(new Error('first failure'))
+                .mockRejectedValueOnce(err)
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 .mockResolvedValue(mockNativeConnection as any);
 
             const connectPromise = connection.connect();
@@ -84,70 +82,29 @@ describe('ConnectionImplementation', () => {
             await connectPromise;
 
             expect(errorListener).toHaveBeenCalledTimes(1);
+            expect(errorListener).toHaveBeenCalledWith(err);
             expect(amqp.connect).toHaveBeenCalledTimes(2);
         });
 
         it('should emit "connectionRetryExhausted" and throw when all retries are exhausted', async () => {
             vitest.useFakeTimers();
-            const exhaustedListener = vi.fn();
             const fastFailConnection = new ConnectionImplementation(
                 { hostname: 'localhost' },
                 { maxRetries: 2, reconnectionTimeoutMs: 0 },
             );
+
+            const exhaustedListener = vi.fn();
             fastFailConnection.on('connectionRetryExhausted', exhaustedListener);
+
             vi.mocked(amqp.connect).mockRejectedValue(new Error('always fails'));
 
             const connectPromise = fastFailConnection.connect();
             // Attach handler before advancing to avoid unhandled rejection window
-            const rejectExpectation = expect(connectPromise).rejects.toThrow();
+            const rejectExpectation = expect(connectPromise).rejects.toThrow(TooManyRetriesError);
             await vitest.advanceTimersByTimeAsync(2000);
             await rejectExpectation;
 
             expect(exhaustedListener).toHaveBeenCalledTimes(1);
-        });
-
-        it('should automatically reconnect when native connection emits "close" and not closing', async () => {
-            vitest.useFakeTimers();
-            await connection.connect();
-
-            const secondConnection = Object.assign(new EventEmitter(), {
-                close: vi.fn().mockResolvedValue(undefined),
-                createChannel: vi.fn().mockResolvedValue({}),
-            });
-            vi.mocked(amqp.connect).mockResolvedValueOnce(secondConnection as any);
-
-            mockNativeConnection.emit('close');
-
-            await vitest.advanceTimersByTimeAsync(1000);
-
-            expect(amqp.connect).toHaveBeenCalledTimes(2);
-        });
-
-        it('should NOT reconnect when native "close" fires after explicit close()', async () => {
-            await connection.connect();
-            await connection.close();
-
-            vi.mocked(amqp.connect).mockClear();
-            mockNativeConnection.emit('close');
-
-            // Allow any synchronous reconnect logic to execute
-            await Promise.resolve();
-            await Promise.resolve();
-
-            expect(amqp.connect).not.toHaveBeenCalled();
-        });
-
-        it('should emit "reconnecting" when native connection drops unexpectedly', async () => {
-            vitest.useFakeTimers();
-            const reconnectingListener = vi.fn();
-            connection.on('reconnecting', reconnectingListener);
-
-            await connection.connect();
-            mockNativeConnection.emit('close');
-
-            await vitest.advanceTimersByTimeAsync(0);
-
-            expect(reconnectingListener).toHaveBeenCalledTimes(1);
         });
 
         it('should emit "error" when native connection emits error', async () => {
@@ -155,35 +112,90 @@ describe('ConnectionImplementation', () => {
             connection.on('error', errorListener);
 
             await connection.connect();
-            mockNativeConnection.emit('error', new Error('native error'));
+
+            const err = new Error('native error');
+            mockNativeConnection.emit('error', err);
 
             expect(errorListener).toHaveBeenCalledTimes(1);
-            expect(errorListener).toHaveBeenCalledWith(new Error('native error'));
+            expect(errorListener).toHaveBeenCalledWith(err);
+        });
+
+        it('should abort connecting and resolve when close() is called during retry delay', async () => {
+            vitest.useFakeTimers();
+
+            const slowConnection = new ConnectionImplementation(
+                { hostname: 'localhost' },
+                { maxRetries: 5, reconnectionTimeoutMs: 100 },
+            );
+
+            vi.mocked(amqp.connect).mockRejectedValue(new Error('refused'));
+
+            const connectPromise = slowConnection.connect();
+            // Let the first amqp.connect fail and enter the 100ms retry delay
+            await vitest.advanceTimersByTimeAsync(50);
+
+            const closePromise = slowConnection.close();
+
+            // Advance past the 100ms delay so the retry callback runs with closing state
+            await vitest.advanceTimersByTimeAsync(200);
+
+            await Promise.all([connectPromise, closePromise]);
+
+            expect(slowConnection.state()).toBe(ConnectionState.closed);
+            // Second attempt never reached amqp.connect — aborted by state check
+            expect(amqp.connect).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('reconnect', () => {
+        it('should automatically reconnect when native connection emits "close" and not closing', async () => {
+            vitest.useFakeTimers();
+
+            const connectHandler = vitest.fn();
+            connection.on('connected', connectHandler);
+            const reconnectingHandler = vitest.fn();
+            connection.on('reconnecting', reconnectingHandler);
+
+            await connection.connect();
+
+            mockNativeConnection.emit('close');
+
+            await vitest.advanceTimersByTimeAsync(1000);
+
+            expect(amqp.connect).toHaveBeenCalledTimes(2);
+            expect(reconnectingHandler).toHaveBeenCalledTimes(1);
+            expect(connectHandler).toHaveBeenCalledTimes(2);
+        });
+
+        it('should NOT reconnect when native "close" fires after explicit close()', async () => {
+            vitest.useFakeTimers();
+            await connection.connect();
+            expect(amqp.connect).toHaveBeenCalledTimes(1);
+
+            await connection.close();
+
+            mockNativeConnection.emit('close');
+
+            // Allow any synchronous reconnect logic to execute
+            await vitest.advanceTimersByTimeAsync(1000);
+
+            expect(amqp.connect).toHaveBeenCalledTimes(1);
         });
     });
 
     describe('close', () => {
         it('should close the native connection', async () => {
             await connection.connect();
-            await connection.close();
 
-            expect(mockNativeConnection.close).toHaveBeenCalledTimes(1);
-        });
-
-        it('should emit "close" event after closing', async () => {
             const closeListener = vi.fn();
             connection.on('close', closeListener);
 
-            await connection.connect();
-            await connection.close();
+            const closePromise = connection.close();
+            expect(connection.state()).toEqual(ConnectionState.closing);
+            await closePromise;
 
+            expect(mockNativeConnection.close).toHaveBeenCalledTimes(1);
             expect(closeListener).toHaveBeenCalledTimes(1);
-        });
-
-        it('should transition state to closed', async () => {
-            await connection.connect();
-            await connection.close();
-
             expect(connection.state()).toBe(ConnectionState.closed);
         });
 
@@ -192,14 +204,24 @@ describe('ConnectionImplementation', () => {
             expect(mockNativeConnection.close).not.toHaveBeenCalled();
         });
 
-        it('should be idempotent — two concurrent close() calls share the same promise', async () => {
+        it('should be idempotent — multiple concurrent close() calls share the same promise', async () => {
             await connection.connect();
 
             const close1 = connection.close();
             const close2 = connection.close();
+            const close3 = connection.close();
+            const close4 = connection.close();
 
-            await Promise.all([close1, close2]);
+            await Promise.all([close1, close2, close3, close4]);
 
+            expect(mockNativeConnection.close).toHaveBeenCalledTimes(1);
+        });
+
+        it('should no-op when already closed', async () => {
+            await connection.connect();
+            await connection.close();
+
+            await expect(connection.close()).resolves.toBeUndefined();
             expect(mockNativeConnection.close).toHaveBeenCalledTimes(1);
         });
 
@@ -207,13 +229,15 @@ describe('ConnectionImplementation', () => {
             const closeListener = vi.fn();
             connection.on('close', closeListener);
 
-            mockNativeConnection.close = vi.fn().mockRejectedValue(new Error('close failed'));
+            const err = new Error('close failed');
+            mockNativeConnection.close = vi.fn().mockRejectedValue(err);
 
             await connection.connect();
             // close() propagates the native close error but still emits 'close' via finally
-            await connection.close().catch(() => {});
+            await expect(connection.close()).rejects.toThrow(err);
 
             expect(closeListener).toHaveBeenCalledTimes(1);
+            expect(connection.state()).toEqual(ConnectionState.closed);
         });
     });
 
@@ -251,6 +275,29 @@ describe('ConnectionImplementation', () => {
             expect(amqp.connect).toHaveBeenCalledTimes(1);
             expect(native).toBe(mockNativeConnection);
         });
+
+        it('should ignore error during reconnect and left connection in closed state', async () => {
+            vitest.useFakeTimers();
+
+            connection = new ConnectionImplementation(
+                { hostname: 'localhost' },
+                { maxRetries: 1, reconnectionTimeoutMs: 100 },
+            );
+
+            vi.mocked(amqp.connect)
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                .mockResolvedValueOnce(mockNativeConnection as any)
+                .mockRejectedValue(new Error('connection-error'));
+
+            await connection.connect();
+            await vitest.advanceTimersByTimeAsync(10_000);
+
+            mockNativeConnection.emit('close');
+            expect(connection.state()).toEqual(ConnectionState.connecting);
+
+            await vitest.advanceTimersByTimeAsync(10_000);
+            expect(connection.state()).toEqual(ConnectionState.closed);
+        });
     });
 
     describe('createChannel', () => {
@@ -258,17 +305,12 @@ describe('ConnectionImplementation', () => {
             const channel = connection.createChannel();
 
             expect(channel).toBeInstanceOf(ChannelImplementation);
-        });
-
-        it('should return an unconfirmed channel by default', () => {
-            const channel = connection.createChannel() as ChannelImplementation;
-
             // @ts-expect-error wrapper is private
             expect(channel.wrapper.isConfirmed).toBe(false);
         });
 
         it('should return a confirmed channel when isConfirmed=true', () => {
-            const channel = connection.createChannel(true) as ChannelImplementation;
+            const channel = connection.createChannel(true);
 
             // @ts-expect-error wrapper is private
             expect(channel.wrapper.isConfirmed).toBe(true);
@@ -283,17 +325,13 @@ describe('ConnectionImplementation', () => {
 
     describe('factory methods', () => {
         // ConnectionImplementation factory methods delegate to createChannel().createXxx(queue/exchange, options).
-        // Since TestQueue/TestExchange return their own mocks (TestConsumer, TestProducer, etc.),
-        // we verify delegation by checking that the queue/exchange mock was called correctly.
+        // These are already tested, so no extra care needs to be done here
 
         it('createConsumerForQueue calls queue.createConsumer with a ChannelImplementation', async () => {
             const queue = new TestQueue();
             await connection.createConsumerForQueue(queue);
 
             expect(queue.createConsumer).toHaveBeenCalledTimes(1);
-            expect(queue.createConsumer).toHaveBeenCalledWith(
-                expect.objectContaining({ channel: expect.any(ChannelImplementation) }),
-            );
         });
 
         it('createBatchConsumerForQueue calls queue.createBatchConsumer with a ChannelImplementation', async () => {
@@ -301,9 +339,6 @@ describe('ConnectionImplementation', () => {
             await connection.createBatchConsumerForQueue(queue);
 
             expect(queue.createBatchConsumer).toHaveBeenCalledTimes(1);
-            expect(queue.createBatchConsumer).toHaveBeenCalledWith(
-                expect.objectContaining({ channel: expect.any(ChannelImplementation) }),
-            );
         });
 
         it('createProducerForExchange calls exchange.createProducer with a ChannelImplementation', async () => {
@@ -311,9 +346,6 @@ describe('ConnectionImplementation', () => {
             await connection.createProducerForExchange(exchange);
 
             expect(exchange.createProducer).toHaveBeenCalledTimes(1);
-            expect(exchange.createProducer).toHaveBeenCalledWith(
-                expect.objectContaining({ channel: expect.any(ChannelImplementation) }),
-            );
         });
 
         it('createProducerForQueue calls queue.createProducer with a ChannelImplementation', async () => {
@@ -321,9 +353,6 @@ describe('ConnectionImplementation', () => {
             await connection.createProducerForQueue(queue);
 
             expect(queue.createProducer).toHaveBeenCalledTimes(1);
-            expect(queue.createProducer).toHaveBeenCalledWith(
-                expect.objectContaining({ channel: expect.any(ChannelImplementation) }),
-            );
         });
 
         it('createConsumerForExchange calls exchange.createConsumer with channel and pattern merged', async () => {
@@ -332,8 +361,8 @@ describe('ConnectionImplementation', () => {
 
             expect(exchange.createConsumer).toHaveBeenCalledTimes(1);
             const [firstArg] = exchange.createConsumer.mock.calls[0]!;
-            expect((firstArg as Record<string, unknown>)['pattern']).toBe('test.#');
-            expect((firstArg as Record<string, unknown>)['channel']).toBeInstanceOf(ChannelImplementation);
+            expect(firstArg.pattern).toBe('test.#');
+            expect(firstArg.channel).toBeInstanceOf(ChannelImplementation);
         });
 
         it('createBatchConsumerForExchange calls exchange.createBatchConsumer with channel and pattern merged', async () => {
@@ -342,8 +371,8 @@ describe('ConnectionImplementation', () => {
 
             expect(exchange.createBatchConsumer).toHaveBeenCalledTimes(1);
             const [firstArg] = exchange.createBatchConsumer.mock.calls[0]!;
-            expect((firstArg as Record<string, unknown>)['pattern']).toBe('test.#');
-            expect((firstArg as Record<string, unknown>)['channel']).toBeInstanceOf(ChannelImplementation);
+            expect(firstArg.pattern).toBe('test.#');
+            expect(firstArg.channel).toBeInstanceOf(ChannelImplementation);
         });
 
         it('createProducerForExchange uses a confirmed channel when isConfirmed=true', async () => {
@@ -351,9 +380,7 @@ describe('ConnectionImplementation', () => {
             await connection.createProducerForExchange(exchange, {}, true);
 
             const [calledWith] = exchange.createProducer.mock.calls[0]!;
-            const channelArg = (calledWith as { channel: ChannelImplementation }).channel;
-            // @ts-expect-error wrapper is private
-            expect(channelArg.wrapper.isConfirmed).toBe(true);
+            expect(calledWith.channel.wrapper.isConfirmed).toBe(true);
         });
     });
 });

@@ -2,10 +2,16 @@ import { EventEmitter } from 'events';
 import * as amqp from 'amqplib';
 import { Replies } from 'amqplib';
 import { Queue, QueueOptions } from '../queue';
-import { ExchangeTypes, Exchange } from '../exchange';
+import {
+    ExchangeTypes,
+    Exchange,
+    ExchangeConsumerQueueOptions,
+    ExchangeConsumerOptions,
+    ExchangeBatchConsumerOptions,
+    ExchangeOptions,
+} from '../exchange';
 import { Producer, ProducerOptions } from '../producer';
 import { ConsumerOptions, Consumer, BatchConsumerOptions, BatchConsumer } from '../consumer';
-import { ExchangeConsumerQueueOptions, ExchangeConsumerOptions, ExchangeBatchConsumerOptions, ExchangeOptions } from '../exchange/types';
 import { Connection } from '../connection';
 import { ChannelPublishOptions } from './types';
 

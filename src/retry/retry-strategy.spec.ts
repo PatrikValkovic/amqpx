@@ -31,7 +31,7 @@ describe('Retry', () => {
             // linearBackoff with no jitter override uses default 0.25 jitter, so values vary
             // but should always be within ±25% of 1000
             for (let i = 0; i < 20; i++) {
-                const delay = result.reconnectionTimeoutMs(1);
+                const delay = result.reconnectionTimeoutMs(i);
                 expect(delay).toBeGreaterThanOrEqual(750);
                 expect(delay).toBeLessThanOrEqual(1250);
             }

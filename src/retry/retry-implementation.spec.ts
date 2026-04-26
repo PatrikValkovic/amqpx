@@ -24,7 +24,9 @@ describe('Retry', () => {
 
         it('throws TooManyRetriesError after maxRetries exhausted', async () => {
             const callback = vi.fn().mockRejectedValue(new Error('always fails'));
-            await expect(retryLoop(zeroDelayStrategy, callback)).rejects.toThrow(TooManyRetriesError);
+            await expect(
+                retryLoop(zeroDelayStrategy, callback),
+            ).rejects.toThrow(TooManyRetriesError);
             expect(callback).toHaveBeenCalledTimes(3);
         });
 
@@ -50,7 +52,10 @@ describe('Retry', () => {
         });
 
         it('works with async callback', async () => {
-            const result = await retryLoop(zeroDelayStrategy, async () => 'async-result');
+            const result = await retryLoop(
+                zeroDelayStrategy,
+                () => Promise.resolve('async-result'),
+            );
             expect(result).toBe('async-result');
         });
 

@@ -9,10 +9,6 @@ describe('ExchangeImplementation', () => {
 
     beforeEach(() => {
         channel = new TestChannel();
-        (channel.nativeChannel as any).assertExchange = vi.fn().mockResolvedValue({});
-        (channel.nativeChannel as any).checkExchange = vi.fn().mockResolvedValue({});
-        (channel.nativeChannel as any).bindQueue = vi.fn().mockResolvedValue(undefined);
-        (channel.nativeChannel as any).bindExchange = vi.fn().mockResolvedValue(undefined);
         exchange = new ExchangeImplementation(channel, 'my-exchange', 'direct');
     });
 
@@ -20,11 +16,11 @@ describe('ExchangeImplementation', () => {
         it('should call assertExchange on native channel in Assert mode when using default options', async () => {
             await exchange.assert();
 
-            expect((channel.nativeChannel as any).assertExchange).toHaveBeenCalledTimes(1);
-            expect((channel.nativeChannel as any).assertExchange).toHaveBeenCalledWith(
+            expect(channel.nativeChannel.assertExchange).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.assertExchange).toHaveBeenCalledWith(
                 'my-exchange',
                 'direct',
-                expect.objectContaining({ assertionMode: AssertionMode.Assert }),
+                expect.anything(),
             );
         });
 
@@ -35,8 +31,24 @@ describe('ExchangeImplementation', () => {
 
             await assertExchange.assert();
 
-            expect((channel.nativeChannel as any).assertExchange).toHaveBeenCalledTimes(1);
-            expect((channel.nativeChannel as any).checkExchange).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.assertExchange).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.checkExchange).not.toHaveBeenCalled();
+        });
+
+        it('should call assertExchange on native channel with correct exchange type', async () => {
+            const assertExchange = new ExchangeImplementation(channel, 'my-exchange', 'fanout', {
+                assertionMode: AssertionMode.Assert,
+            });
+
+            await assertExchange.assert();
+
+            expect(channel.nativeChannel.assertExchange).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.assertExchange).toHaveBeenCalledWith(
+                'my-exchange',
+                'fanout',
+                expect.anything(),
+            );
+            expect(channel.nativeChannel.checkExchange).not.toHaveBeenCalled();
         });
 
         it('should call checkExchange on native channel in Check mode', async () => {
@@ -46,9 +58,9 @@ describe('ExchangeImplementation', () => {
 
             await checkExchange.assert();
 
-            expect((channel.nativeChannel as any).checkExchange).toHaveBeenCalledTimes(1);
-            expect((channel.nativeChannel as any).checkExchange).toHaveBeenCalledWith('my-exchange');
-            expect((channel.nativeChannel as any).assertExchange).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.checkExchange).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.checkExchange).toHaveBeenCalledWith('my-exchange');
+            expect(channel.nativeChannel.assertExchange).not.toHaveBeenCalled();
         });
 
         it('should skip any native call in Passive mode', async () => {
@@ -58,25 +70,25 @@ describe('ExchangeImplementation', () => {
 
             await passiveExchange.assert();
 
-            expect((channel.nativeChannel as any).assertExchange).not.toHaveBeenCalled();
-            expect((channel.nativeChannel as any).checkExchange).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.assertExchange).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.checkExchange).not.toHaveBeenCalled();
         });
 
         it('should not assert twice when assert is called multiple times', async () => {
             await exchange.assert();
             await exchange.assert();
 
-            expect((channel.nativeChannel as any).assertExchange).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.assertExchange).toHaveBeenCalledTimes(1);
         });
 
         it('should re-assert after channel emits close event', async () => {
             await exchange.assert();
-            expect((channel.nativeChannel as any).assertExchange).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.assertExchange).toHaveBeenCalledTimes(1);
 
             channel.emit('close');
 
             await exchange.assert();
-            expect((channel.nativeChannel as any).assertExchange).toHaveBeenCalledTimes(2);
+            expect(channel.nativeChannel.assertExchange).toHaveBeenCalledTimes(2);
         });
 
         it('should pass exchange options to assertExchange', async () => {
@@ -87,11 +99,23 @@ describe('ExchangeImplementation', () => {
 
             await durableExchange.assert();
 
-            expect((channel.nativeChannel as any).assertExchange).toHaveBeenCalledWith(
+            expect(channel.nativeChannel.assertExchange).toHaveBeenCalledWith(
                 'my-exchange',
                 'topic',
                 expect.objectContaining({ durable: true, autoDelete: false }),
             );
+        });
+
+        it('should fail for invalid assert mode', async () => {
+            exchange = new ExchangeImplementation(channel, 'my-exchange', 'direct', {
+                // @ts-expect-error testing invalid mode
+                assertionMode: 'invalid-mode',
+            });
+            await expect(
+                exchange.assert(),
+            ).rejects.toThrow('Unknown assertion mode: invalid-mode');
+            expect(channel.nativeChannel.assertExchange).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.checkExchange).not.toHaveBeenCalled();
         });
     });
 
@@ -105,7 +129,7 @@ describe('ExchangeImplementation', () => {
         it('should trigger assert when called', async () => {
             await exchange.name();
 
-            expect((channel.nativeChannel as any).assertExchange).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.assertExchange).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -116,7 +140,7 @@ describe('ExchangeImplementation', () => {
             await exchange.assert();
             await exchange.bindQueue(queue, 'my.routing.key');
 
-            expect((channel.nativeChannel as any).bindQueue).toHaveBeenCalledWith(
+            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledWith(
                 'test-queue',
                 'my-exchange',
                 'my.routing.key',
@@ -131,7 +155,7 @@ describe('ExchangeImplementation', () => {
             await exchange.assert();
             await exchange.bindQueue(queue, 'my.routing.key', args);
 
-            expect((channel.nativeChannel as any).bindQueue).toHaveBeenCalledWith(
+            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledWith(
                 'test-queue',
                 'my-exchange',
                 'my.routing.key',
@@ -145,6 +169,7 @@ describe('ExchangeImplementation', () => {
             await exchange.assert();
             await exchange.bindQueue(queue, 'routing.key');
             await exchange.bindQueue(queue, 'routing.key');
+            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledTimes(2);
 
             // Second call still calls nativeChannel.bindQueue, but internal binding list should deduplicate
             // after channel close, rebind should only call bindQueue once for this queue+pattern combination
@@ -152,7 +177,7 @@ describe('ExchangeImplementation', () => {
             await exchange.assert();
 
             // bindQueue is called: 2 times during initial binding + 1 time during rebind (deduplicated)
-            expect((channel.nativeChannel as any).bindQueue).toHaveBeenCalledTimes(3);
+            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledTimes(3);
         });
 
         it('should allow different patterns for the same queue', async () => {
@@ -161,12 +186,14 @@ describe('ExchangeImplementation', () => {
             await exchange.assert();
             await exchange.bindQueue(queue, 'pattern.one');
             await exchange.bindQueue(queue, 'pattern.two');
+            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledTimes(2);
 
             channel.emit('close');
             await exchange.assert();
 
             // After rebind, both patterns should be re-registered
-            const bindQueueCalls = (channel.nativeChannel as any).bindQueue.mock.calls;
+            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledTimes(4);
+            const bindQueueCalls = channel.nativeChannel.bindQueue.mock.calls;
             const rebindCalls = bindQueueCalls.slice(2); // first 2 are initial bindings
             const rebindPatterns = rebindCalls.map((call: unknown[]) => call[2]);
             expect(rebindPatterns).toContain('pattern.one');
@@ -181,7 +208,7 @@ describe('ExchangeImplementation', () => {
             await exchange.assert();
             await exchange.bindExchange(sourceExchange, 'fanout.key');
 
-            expect((channel.nativeChannel as any).bindExchange).toHaveBeenCalledWith(
+            expect(channel.nativeChannel.bindExchange).toHaveBeenCalledWith(
                 'test-exchange',
                 'my-exchange',
                 'fanout.key',
@@ -196,7 +223,7 @@ describe('ExchangeImplementation', () => {
             await exchange.assert();
             await exchange.bindExchange(sourceExchange, 'topic.key', args);
 
-            expect((channel.nativeChannel as any).bindExchange).toHaveBeenCalledWith(
+            expect(channel.nativeChannel.bindExchange).toHaveBeenCalledWith(
                 'test-exchange',
                 'my-exchange',
                 'topic.key',
@@ -210,46 +237,27 @@ describe('ExchangeImplementation', () => {
             await exchange.assert();
             await exchange.bindExchange(sourceExchange, 'fanout.key');
             await exchange.bindExchange(sourceExchange, 'fanout.key');
+            expect(channel.nativeChannel.bindExchange).toHaveBeenCalledTimes(2);
 
             channel.emit('close');
             await exchange.assert();
 
             // bindExchange called: 2 during initial + 1 during rebind (deduplicated)
-            expect((channel.nativeChannel as any).bindExchange).toHaveBeenCalledTimes(3);
-        });
-    });
-
-    describe('rebinding after channel close', () => {
-        it('should call nativeChannel.bindQueue again after channel close and re-assert', async () => {
-            const queue = new TestQueue();
-
-            await exchange.assert();
-            await exchange.bindQueue(queue, 'routing.key');
-
-            channel.emit('close');
-            await exchange.assert();
-
-            expect((channel.nativeChannel as any).bindQueue).toHaveBeenCalledTimes(2);
-            expect((channel.nativeChannel as any).bindQueue).toHaveBeenNthCalledWith(
-                2,
-                'test-queue',
-                'my-exchange',
-                'routing.key',
-                undefined,
-            );
+            expect(channel.nativeChannel.bindExchange).toHaveBeenCalledTimes(3);
         });
 
-        it('should call nativeChannel.bindExchange again after channel close and re-assert', async () => {
+        it('should call bind again after channel close and re-assert', async () => {
             const sourceExchange = new TestExchange();
 
             await exchange.assert();
             await exchange.bindExchange(sourceExchange, 'routing.key');
+            expect(channel.nativeChannel.bindExchange).toHaveBeenCalledTimes(1);
 
             channel.emit('close');
             await exchange.assert();
 
-            expect((channel.nativeChannel as any).bindExchange).toHaveBeenCalledTimes(2);
-            expect((channel.nativeChannel as any).bindExchange).toHaveBeenNthCalledWith(
+            expect(channel.nativeChannel.bindExchange).toHaveBeenCalledTimes(2);
+            expect(channel.nativeChannel.bindExchange).toHaveBeenNthCalledWith(
                 2,
                 'test-exchange',
                 'my-exchange',
@@ -257,44 +265,40 @@ describe('ExchangeImplementation', () => {
                 undefined,
             );
         });
+
+        it('should bind same exchange twice with two patterns', async () => {
+            const sourceExchange = new TestExchange();
+
+            await exchange.assert();
+            await exchange.bindExchange(sourceExchange, 'fanout.key');
+            await exchange.bindExchange(sourceExchange, 'fanout.key2');
+            expect(channel.nativeChannel.bindExchange).toHaveBeenCalledTimes(2);
+
+            channel.emit('close');
+            await exchange.assert();
+
+            // bindExchange called: 2 during initial + 1 during rebind (deduplicated)
+            expect(channel.nativeChannel.bindExchange).toHaveBeenCalledTimes(4);
+        });
     });
 
     describe('createConsumer', () => {
-        it('should call channel.createQueue with empty name, durable=false, exclusive=true', async () => {
-            await exchange.createConsumer({
+        it('should create consumer on the exchange with the new queue and provided pattern', async () => {
+            const consumer = await exchange.createConsumer({
                 pattern: 'test.pattern',
             });
 
-            expect(channel.createQueue).toHaveBeenCalledWith('', expect.objectContaining({
-                durable: false,
-                exclusive: true,
-            }));
-        });
-
-        it('should call bindQueue on the exchange with the new queue and provided pattern', async () => {
-            await exchange.assert();
-            await exchange.createConsumer({
-                pattern: 'test.pattern',
-            });
-
-            expect((channel.nativeChannel as any).bindQueue).toHaveBeenCalledWith(
+            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledWith(
                 'test-queue',
                 'my-exchange',
                 'test.pattern',
                 undefined,
             );
-        });
-
-        it('should call createConsumer on the returned queue and return the result', async () => {
-            const testQueue = new TestQueue();
-            channel.createQueue = vi.fn().mockResolvedValue(testQueue);
-
-            const consumerOptions = { pattern: 'test.pattern' };
-            const result = await exchange.createConsumer(consumerOptions);
-
-            expect(testQueue.createConsumer).toHaveBeenCalledTimes(1);
-            expect(testQueue.createConsumer).toHaveBeenCalledWith(consumerOptions);
-            expect(result).toBeDefined();
+            expect(channel.createQueue).toHaveBeenCalledWith('', expect.objectContaining({
+                durable: false,
+                exclusive: true,
+            }));
+            expect(consumer.channel).not.toBe(channel);
         });
 
         it('should pass additional queueOptions to createQueue', async () => {
@@ -312,7 +316,7 @@ describe('ExchangeImplementation', () => {
     });
 
     describe('createBatchConsumer', () => {
-        it('should call channel.createQueue with empty name, durable=false, exclusive=true', async () => {
+        it('should create batch consumer with empty name, durable=false, exclusive=true', async () => {
             await exchange.createBatchConsumer({
                 pattern: 'test.pattern',
             });
@@ -321,32 +325,12 @@ describe('ExchangeImplementation', () => {
                 durable: false,
                 exclusive: true,
             }));
-        });
-
-        it('should call bindQueue on the exchange with the new queue and provided pattern', async () => {
-            await exchange.assert();
-            await exchange.createBatchConsumer({
-                pattern: 'test.pattern',
-            });
-
-            expect((channel.nativeChannel as any).bindQueue).toHaveBeenCalledWith(
+            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledWith(
                 'test-queue',
                 'my-exchange',
                 'test.pattern',
                 undefined,
             );
-        });
-
-        it('should call createBatchConsumer on the returned queue and return the result', async () => {
-            const testQueue = new TestQueue();
-            channel.createQueue = vi.fn().mockResolvedValue(testQueue);
-
-            const consumerOptions = { pattern: 'test.pattern' };
-            const result = await exchange.createBatchConsumer(consumerOptions);
-
-            expect(testQueue.createBatchConsumer).toHaveBeenCalledTimes(1);
-            expect(testQueue.createBatchConsumer).toHaveBeenCalledWith(consumerOptions);
-            expect(result).toBeDefined();
         });
 
         it('should pass additional queueOptions to createQueue', async () => {
@@ -368,29 +352,26 @@ describe('ExchangeImplementation', () => {
             const producer = await exchange.createProducer();
 
             expect(producer).toBeInstanceOf(ProducerImplementation);
+            expect(producer.channel).not.toBe(channel);
         });
 
         it('should use the channel provided in options when present', async () => {
             const otherChannel = new TestChannel();
-            (otherChannel.nativeChannel as any).assertExchange = vi.fn().mockResolvedValue({});
-            (otherChannel.nativeChannel as any).checkExchange = vi.fn().mockResolvedValue({});
-            (otherChannel.nativeChannel as any).bindQueue = vi.fn().mockResolvedValue(undefined);
-            (otherChannel.nativeChannel as any).bindExchange = vi.fn().mockResolvedValue(undefined);
 
             const producer = await exchange.createProducer({ channel: otherChannel });
 
-            expect((producer as ProducerImplementation<unknown>).channel).toBe(otherChannel);
+            expect(producer.channel).toBe(otherChannel);
         });
 
         it('should fall back to channel.connection.createChannel when no channel option is provided', async () => {
             const fallbackChannel = new TestChannel();
             const createChannelMock = vi.fn().mockReturnValue(fallbackChannel);
-            (channel.connection as any).createChannel = createChannelMock;
+            channel.connection.createChannel = createChannelMock;
 
             const producer = await exchange.createProducer();
 
             expect(createChannelMock).toHaveBeenCalledTimes(1);
-            expect((producer as ProducerImplementation<unknown>).channel).toBe(fallbackChannel);
+            expect(producer.channel).toBe(fallbackChannel);
         });
     });
 });

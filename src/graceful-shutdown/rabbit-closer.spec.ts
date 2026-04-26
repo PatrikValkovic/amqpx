@@ -1,4 +1,4 @@
-import { TestChannel, TestConsumer, TestProducer, TestConnection } from '../extensions/vitest';
+import { TestConsumer, TestProducer, TestConnection } from '../extensions/vitest';
 import { RabbitCloser } from './rabbit-closer';
 
 describe('RabbitCloser', () => {
@@ -52,71 +52,116 @@ describe('RabbitCloser', () => {
     describe('close ordering', () => {
         it('should close producer before its channel', async () => {
             const callOrder: string[] = [];
-            producer.close = vi.fn().mockImplementation(async () => { callOrder.push('producer.close'); });
-            (producer.channel as TestChannel).close = vi.fn().mockImplementation(async () => { callOrder.push('channel.close'); });
+            producer.close = vi.fn().mockImplementation(async () => {
+                callOrder.push('producer.close');
+            });
+            producer.channel.close = vi.fn().mockImplementation(async () => {
+                callOrder.push('channel.close');
+            });
 
             const closer = new RabbitCloser([], [], [producer]);
             await closer.close();
 
-            expect(callOrder.indexOf('producer.close')).toBeLessThan(callOrder.indexOf('channel.close'));
+            const producerCloseIndex = callOrder.indexOf('producer.close');
+            const channelCloseIndex = callOrder.indexOf('channel.close');
+            expect(producerCloseIndex).toBeGreaterThanOrEqual(0);
+            expect(channelCloseIndex).toBeGreaterThanOrEqual(0);
+            expect(producerCloseIndex).toBeLessThan(channelCloseIndex);
         });
 
         it('should close consumer before its channel', async () => {
             const callOrder: string[] = [];
-            consumer.close = vi.fn().mockImplementation(async () => { callOrder.push('consumer.close'); });
-            (consumer.channel as TestChannel).close = vi.fn().mockImplementation(async () => { callOrder.push('channel.close'); });
+            consumer.close = vi.fn().mockImplementation(async () => {
+                callOrder.push('consumer.close');
+            });
+            consumer.channel.close = vi.fn().mockImplementation(async () => {
+                callOrder.push('channel.close');
+            });
 
             const closer = new RabbitCloser([], [consumer], []);
             await closer.close();
 
-            expect(callOrder.indexOf('consumer.close')).toBeLessThan(callOrder.indexOf('channel.close'));
+            const consumerCloseIndex = callOrder.indexOf('consumer.close');
+            const channelCloseIndex = callOrder.indexOf('channel.close');
+            expect(consumerCloseIndex).toBeGreaterThanOrEqual(0);
+            expect(channelCloseIndex).toBeGreaterThanOrEqual(0);
+            expect(consumerCloseIndex).toBeLessThan(channelCloseIndex);
         });
 
         it('should close channels before connections', async () => {
             const callOrder: string[] = [];
-            (producer.channel as TestChannel).close = vi.fn().mockImplementation(async () => { callOrder.push('channel.close'); });
-            connection.close = vi.fn().mockImplementation(async () => { callOrder.push('connection.close'); });
+            producer.channel.close = vi.fn().mockImplementation(async () => {
+                callOrder.push('channel.close');
+            });
+            connection.close = vi.fn().mockImplementation(async () => {
+                callOrder.push('connection.close');
+            });
 
             const closer = new RabbitCloser([connection], [], [producer]);
             await closer.close();
 
-            expect(callOrder.indexOf('channel.close')).toBeLessThan(callOrder.indexOf('connection.close'));
+            const channelCloseIndex = callOrder.indexOf('channel.close');
+            const connectionCloseIndex = callOrder.indexOf('connection.close');
+            expect(channelCloseIndex).toBeGreaterThanOrEqual(0);
+            expect(connectionCloseIndex).toBeGreaterThanOrEqual(0);
+            expect(channelCloseIndex).toBeLessThan(connectionCloseIndex);
         });
 
         it('should close producer before connection', async () => {
             const callOrder: string[] = [];
-            producer.close = vi.fn().mockImplementation(async () => { callOrder.push('producer.close'); });
-            connection.close = vi.fn().mockImplementation(async () => { callOrder.push('connection.close'); });
+            producer.close = vi.fn().mockImplementation(async () => {
+                callOrder.push('producer.close');
+            });
+            connection.close = vi.fn().mockImplementation(async () => {
+                callOrder.push('connection.close');
+            });
 
             const closer = new RabbitCloser([connection], [], [producer]);
             await closer.close();
 
-            expect(callOrder.indexOf('producer.close')).toBeLessThan(callOrder.indexOf('connection.close'));
+            const producerCloseIndex = callOrder.indexOf('producer.close');
+            const connectionCloseIndex = callOrder.indexOf('connection.close');
+            expect(producerCloseIndex).toBeGreaterThanOrEqual(0);
+            expect(connectionCloseIndex).toBeGreaterThanOrEqual(0);
+            expect(producerCloseIndex).toBeLessThan(connectionCloseIndex);
         });
 
         it('should close consumer before connection', async () => {
             const callOrder: string[] = [];
-            consumer.close = vi.fn().mockImplementation(async () => { callOrder.push('consumer.close'); });
-            connection.close = vi.fn().mockImplementation(async () => { callOrder.push('connection.close'); });
+            consumer.close = vi.fn().mockImplementation(async () => {
+                callOrder.push('consumer.close');
+            });
+            connection.close = vi.fn().mockImplementation(async () => {
+                callOrder.push('connection.close');
+            });
 
             const closer = new RabbitCloser([connection], [consumer], []);
             await closer.close();
 
-            expect(callOrder.indexOf('consumer.close')).toBeLessThan(callOrder.indexOf('connection.close'));
+            const consumerCloseIndex = callOrder.indexOf('consumer.close');
+            const connectionCloseIndex = callOrder.indexOf('connection.close');
+            expect(consumerCloseIndex).toBeGreaterThanOrEqual(0);
+            expect(connectionCloseIndex).toBeGreaterThanOrEqual(0);
+            expect(consumerCloseIndex).toBeLessThan(connectionCloseIndex);
         });
 
         it('should close consumers after producers', async () => {
             const callOrder: string[] = [];
-            producer.close = vi.fn().mockImplementation(async () => { callOrder.push('producer.close'); });
-            consumer.close = vi.fn().mockImplementation(async () => { callOrder.push('consumer.close'); });
-            // Suppress channel close tracking
-            (producer.channel as TestChannel).close = vi.fn().mockResolvedValue(undefined);
-            (consumer.channel as TestChannel).close = vi.fn().mockResolvedValue(undefined);
+            producer.close = vi.fn().mockImplementation(async () => {
+                callOrder.push('producer.close');
+            });
+            consumer.close = vi.fn().mockImplementation(async () => {
+                callOrder.push('consumer.close');
+            });
 
             const closer = new RabbitCloser([], [consumer], [producer]);
             await closer.close();
 
-            expect(callOrder.indexOf('producer.close')).toBeLessThan(callOrder.indexOf('consumer.close'));
+            const producerCloseIndex = callOrder.indexOf('producer.close');
+            const consumerCloseIndex = callOrder.indexOf('consumer.close');
+            expect(producerCloseIndex).toBeGreaterThanOrEqual(0);
+            expect(consumerCloseIndex).toBeGreaterThanOrEqual(0);
+            expect(producerCloseIndex).toBeLessThan(consumerCloseIndex);
         });
     });
 
@@ -152,8 +197,8 @@ describe('RabbitCloser', () => {
             const closer = new RabbitCloser([], [consumer], [producer]);
             await closer.close();
 
-            expect((producer.channel as TestChannel).close).toHaveBeenCalledTimes(1);
-            expect((consumer.channel as TestChannel).close).toHaveBeenCalledTimes(1);
+            expect(producer.channel.close).toHaveBeenCalledTimes(1);
+            expect(consumer.channel.close).toHaveBeenCalledTimes(1);
         });
     });
 

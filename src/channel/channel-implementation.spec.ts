@@ -1,22 +1,43 @@
+import * as amqp from 'amqplib';
 import { TestConnection, TestQueue, TestExchange } from '../extensions/vitest';
-import { ChannelImplementation } from './channel-implementation';
-import { QueueImplementation } from '../queue/queue-implementation';
-import { ExchangeImplementation } from '../exchange/exchange-implementation';
-import { ConsumerImplementation, BatchConsumerImplementation } from '../consumer';
-import { ProducerImplementation } from '../producer/producer-implementation';
+import { QueueImplementation } from '../queue';
+import { ExchangeImplementation } from '../exchange';
 import { DrainError } from '../errors';
+import { ChannelImplementation } from './channel-implementation';
+
+type EventHandlers = Record<string, (...args: unknown[]) => void>;
+
+type MockAmqpChannel = {
+    on: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+    publish: ReturnType<typeof vi.fn>;
+    waitForConfirms: ReturnType<typeof vi.fn>;
+    assertQueue: ReturnType<typeof vi.fn>;
+    assertExchange: ReturnType<typeof vi.fn>;
+    checkQueue: ReturnType<typeof vi.fn>;
+};
+
+type MockAmqpConnection = {
+    createChannel: ReturnType<typeof vi.fn>;
+    createConfirmChannel: ReturnType<typeof vi.fn>;
+};
 
 describe('ChannelImplementation', () => {
-    let eventHandlers: Record<string, Function>;
-    let mockAmqpChannel: any;
-    let mockAmqpConnection: any;
     let connection: TestConnection;
     let channel: ChannelImplementation;
+    let eventHandlers: EventHandlers;
+    let mockAmqpChannel: MockAmqpChannel;
+    let mockAmqpConnection: MockAmqpConnection;
+
 
     beforeEach(async () => {
+        vitest.useRealTimers();
+        connection = new TestConnection();
+        channel = new ChannelImplementation(connection, false);
+
         eventHandlers = {};
         mockAmqpChannel = {
-            on: vi.fn().mockImplementation((evt: string, h: Function) => {
+            on: vi.fn().mockImplementation((evt: string, h: (...args: unknown[]) => void) => {
                 eventHandlers[evt] = h;
             }),
             close: vi.fn().mockResolvedValue(undefined),
@@ -30,24 +51,17 @@ describe('ChannelImplementation', () => {
             createChannel: vi.fn().mockResolvedValue(mockAmqpChannel),
             createConfirmChannel: vi.fn().mockResolvedValue(mockAmqpChannel),
         };
-        connection = new TestConnection();
-        vi.mocked(connection.native).mockResolvedValue(mockAmqpConnection as any);
-        channel = new ChannelImplementation(connection, false);
+        vi.mocked(connection.native).mockResolvedValue(mockAmqpConnection as unknown as amqp.ChannelModel);
     });
 
     describe('connect', () => {
         it('should call connection.native() then createChannel() on the result', async () => {
-            await channel.connect();
-
-            expect(connection.native).toHaveBeenCalledTimes(1);
-            expect(mockAmqpConnection.createChannel).toHaveBeenCalledTimes(1);
-            expect(mockAmqpConnection.createConfirmChannel).not.toHaveBeenCalled();
-        });
-
-        it('should return itself for chaining', async () => {
             const result = await channel.connect();
 
             expect(result).toBe(channel);
+            expect(connection.native).toHaveBeenCalledTimes(1);
+            expect(mockAmqpConnection.createChannel).toHaveBeenCalledTimes(1);
+            expect(mockAmqpConnection.createConfirmChannel).not.toHaveBeenCalled();
         });
 
         it('should not call createChannel() a second time when connect() is called again', async () => {
@@ -58,39 +72,24 @@ describe('ChannelImplementation', () => {
             expect(connection.native).toHaveBeenCalledTimes(1);
         });
 
-        it('should forward error events from the amqp channel to the ChannelImplementation emitter', async () => {
+        it('should forward events from the amqp channel to the ChannelImplementation emitter', async () => {
             await channel.connect();
 
             const errorListener = vi.fn();
             channel.on('error', errorListener);
-
             const testError = new Error('amqp channel error');
-            eventHandlers['error']?.(testError);
-
+            eventHandlers.error?.(testError);
             expect(errorListener).toHaveBeenCalledTimes(1);
             expect(errorListener).toHaveBeenCalledWith(testError);
-        });
-
-        it('should forward close events from the amqp channel and clear the internal channel wrapper', async () => {
-            await channel.connect();
 
             const closeListener = vi.fn();
             channel.on('close', closeListener);
-
-            eventHandlers['close']?.();
-            await new Promise(resolve => setImmediate(resolve));
-
+            eventHandlers.close?.();
             expect(closeListener).toHaveBeenCalledTimes(1);
-        });
-
-        it('should forward drain events from the amqp channel', async () => {
-            await channel.connect();
 
             const drainListener = vi.fn();
             channel.on('drain', drainListener);
-
-            eventHandlers['drain']?.();
-
+            eventHandlers.drain?.();
             expect(drainListener).toHaveBeenCalledTimes(1);
         });
 
@@ -121,8 +120,10 @@ describe('ChannelImplementation', () => {
 
             const close1 = channel.close();
             const close2 = channel.close();
+            const close3 = channel.close();
+            const close4 = channel.close();
 
-            await Promise.all([close1, close2]);
+            await Promise.all([close1, close2, close3, close4]);
 
             expect(mockAmqpChannel.close).toHaveBeenCalledTimes(1);
         });
@@ -163,6 +164,26 @@ describe('ChannelImplementation', () => {
         });
     });
 
+    describe('checkQueue', () => {
+        it('should delegate to the native channel with the queue name and return the result', async () => {
+            const result = await channel.checkQueue('test-queue');
+
+            expect(mockAmqpChannel.checkQueue).toHaveBeenCalledTimes(1);
+            expect(mockAmqpChannel.checkQueue).toHaveBeenCalledWith('test-queue');
+            expect(result).toEqual({
+                queue: 'test-queue',
+                messageCount: 0,
+                consumerCount: 0,
+            });
+        });
+
+        it('should auto-connect via native() when not yet connected', async () => {
+            await channel.checkQueue('test-queue');
+
+            expect(mockAmqpConnection.createChannel).toHaveBeenCalledTimes(1);
+        });
+    });
+
     describe('publish — regular channel (isConfirmed=false)', () => {
         it('should call amqpChannel.publish with (exchange, routingKey, content, options) and return false', async () => {
             await channel.connect();
@@ -176,6 +197,9 @@ describe('ChannelImplementation', () => {
         });
 
         it('should handle backpressure: wait until drain event fires when amqpChannel.publish returns false', async () => {
+            vitest.useFakeTimers();
+
+            channel = new ChannelImplementation(connection, false);
             await channel.connect();
 
             mockAmqpChannel.publish = vi.fn()
@@ -185,15 +209,12 @@ describe('ChannelImplementation', () => {
             const content = Buffer.from('hello');
             const publishPromise = channel.publish('my-exchange', 'my-key', content, { drainTimeout: 5000 });
 
-            await new Promise(resolve => setImmediate(resolve));
+            await vitest.advanceTimersByTimeAsync(100);
 
-            // trigger drain to unblock the backpressure wait
-            eventHandlers['drain']?.();
+            eventHandlers.drain?.();
 
-            const result = await publishPromise;
-
+            await expect(publishPromise).resolves.toEqual(false);
             expect(mockAmqpChannel.publish).toHaveBeenCalledTimes(2);
-            expect(result).toBe(false);
         });
 
         it('should reject with DrainError when drain timeout expires', async () => {
@@ -205,11 +226,10 @@ describe('ChannelImplementation', () => {
 
             const content = Buffer.from('hello');
             const publishPromise = channel.publish('my-exchange', 'my-key', content, { drainTimeout: 1000 });
+
             // Set up the rejection handler BEFORE advancing timers to avoid unhandled rejection
             const rejectExpectation = expect(publishPromise).rejects.toThrow(DrainError);
-
             await vitest.advanceTimersByTimeAsync(1100);
-
             await rejectExpectation;
         });
     });
@@ -219,12 +239,12 @@ describe('ChannelImplementation', () => {
 
         beforeEach(async () => {
             confirmedChannel = new ChannelImplementation(connection, true);
-            // Use async callback to avoid TDZ: the source captures the return value of publish()
+            // Use async callback to avoid TDZ (temporal dead zoe): the source captures the return value of publish()
             // into `status` and calls resolve(status) inside the callback. If the callback fires
             // synchronously, `status` is not yet assigned (temporal dead zone for `const`).
             mockAmqpChannel.publish = vi.fn().mockImplementation(
                 (_exchange: string, _key: string, _content: Buffer, _opts: unknown, callback: (err: Error | null) => void) => {
-                    Promise.resolve().then(() => callback(null));
+                    setImmediate(() => callback(null));
                     return true;
                 },
             );
@@ -248,7 +268,7 @@ describe('ChannelImplementation', () => {
             // Use a non-'message nacked' error so the retryLoop does not retry and rejects immediately
             mockAmqpChannel.publish = vi.fn().mockImplementation(
                 (_exchange: string, _key: string, _content: Buffer, _opts: unknown, callback: (err: Error | null) => void) => {
-                    Promise.resolve().then(() => callback(new Error('publish failed: connection reset')));
+                    setImmediate(() => callback(new Error('publish failed: connection reset')));
                     return true;
                 },
             );
@@ -314,6 +334,28 @@ describe('ChannelImplementation', () => {
             expect(queue.createBatchConsumer).toHaveBeenCalledTimes(1);
             expect(queue.createBatchConsumer).toHaveBeenCalledWith(
                 expect.objectContaining({ channel }),
+            );
+        });
+
+        it('createConsumerForExchange passes the channel to the exchange createConsumer call', async () => {
+            const exchange = new TestExchange();
+            await channel.createConsumerForExchange(exchange, { pattern: 'test-pattern' });
+
+            expect(exchange.createConsumer).toHaveBeenCalledTimes(1);
+            expect(exchange.createConsumer).toHaveBeenCalledWith(
+                expect.objectContaining({ channel, pattern: 'test-pattern' }),
+                undefined,
+            );
+        });
+
+        it('createBatchConsumerForExchange passes the channel to the exchange createBatchConsumer call', async () => {
+            const exchange = new TestExchange();
+            await channel.createBatchConsumerForExchange(exchange, { pattern: 'test-pattern' });
+
+            expect(exchange.createBatchConsumer).toHaveBeenCalledTimes(1);
+            expect(exchange.createBatchConsumer).toHaveBeenCalledWith(
+                expect.objectContaining({ channel, pattern: 'test-pattern' }),
+                undefined,
             );
         });
     });

@@ -111,5 +111,21 @@ export class TestChannel extends EventEmitter implements Channel {
         consume: vitest.fn().mockImplementation(() => Promise.resolve(this.consumeResponse)),
         ack: vitest.fn(),
         nack: vitest.fn(),
+        assertQueue: vitest.fn().mockImplementation((queue: string) => Promise.resolve({
+            queue,
+            messageCount: 0,
+            consumerCount: 0,
+        })),
+        checkQueue: vitest.fn().mockImplementation((queue: string) => Promise.resolve({
+            queue,
+            messageCount: 0,
+            consumerCount: 0,
+        })),
+        assertExchange: vitest.fn().mockImplementation((exchange: string) => Promise.resolve({
+            exchange,
+        })),
+        checkExchange: vitest.fn().mockResolvedValue(undefined),
+        bindQueue: vitest.fn(),
+        bindExchange: vitest.fn(),
     };
 }

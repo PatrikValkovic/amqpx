@@ -14,9 +14,9 @@ describe('Retry', () => {
             const jitter = 0.1;
             const strategy = linearBackoff(delay, jitter);
             for (let i = 0; i < 50; i++) {
-                const result = strategy(1);
-                expect(result).toBeGreaterThanOrEqual(Math.floor(delay * (1 - jitter)));
-                expect(result).toBeLessThanOrEqual(Math.floor(delay * (1 + jitter)));
+                const result = strategy(i);
+                expect(result).toBeGreaterThanOrEqual(900);
+                expect(result).toBeLessThanOrEqual(1100);
             }
         });
 
@@ -24,7 +24,7 @@ describe('Retry', () => {
             const delay = 1000;
             const strategy = linearBackoff(delay);
             for (let i = 0; i < 50; i++) {
-                const result = strategy(1);
+                const result = strategy(i);
                 expect(result).toBeGreaterThanOrEqual(750);
                 expect(result).toBeLessThanOrEqual(1250);
             }
@@ -45,6 +45,7 @@ describe('Retry', () => {
             expect(strategy(1)).toBe(10);
             expect(strategy(2)).toBe(30);
             expect(strategy(3)).toBe(90);
+            expect(strategy(4)).toBe(270);
         });
 
         it('result is within jitter range', () => {

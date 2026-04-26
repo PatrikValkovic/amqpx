@@ -39,6 +39,20 @@ export class TestChannel extends EventEmitter implements Channel {
         consume: jest.fn().mockImplementation(() => Promise.resolve(this.consumeResponse)),
         ack: jest.fn(),
         nack: jest.fn(),
+        assertQueue: jest.fn().mockImplementation((queue: string) => Promise.resolve({
+            queue,
+            messageCount: 0,
+            consumerCount: 0,
+        })),
+        checkQueue: jest.fn().mockImplementation((queue: string) => Promise.resolve({
+            queue,
+            messageCount: 0,
+            consumerCount: 0,
+        })),
+        assertExchange: jest.fn(),
+        checkExchange: jest.fn(),
+        bindQueue: jest.fn(),
+        bindExchange: jest.fn(),
     };
 
     connect = jest.fn().mockImplementation(() => Promise.resolve(this));

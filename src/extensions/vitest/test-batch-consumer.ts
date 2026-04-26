@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import type * as amqp from 'amqplib';
 import { BatchConsumer } from '../../index';
-import { BatchConsumerCallbackFn } from '../../consumer/types';
+import { BatchConsumerCallbackFn } from '../../consumer';
 import { TestQueue } from './test-queue';
 import { TestChannel } from './test-channel';
 

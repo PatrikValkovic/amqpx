@@ -3,9 +3,8 @@ import * as amqp from 'amqplib';
 import { Channel } from '../channel';
 import { Queue } from '../queue';
 import { ProducerOptions, Producer } from '../producer';
-import { Exchange } from '../exchange';
+import { Exchange, ExchangeConsumerQueueOptions, ExchangeConsumerOptions, ExchangeBatchConsumerOptions } from '../exchange';
 import { ConsumerOptions, Consumer, BatchConsumerOptions, BatchConsumer } from '../consumer';
-import { ExchangeConsumerQueueOptions, ExchangeConsumerOptions, ExchangeBatchConsumerOptions } from '../exchange/types';
 
 /**
  * State in which the connection can be.
