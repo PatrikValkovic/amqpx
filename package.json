@@ -16,8 +16,9 @@
     "build:cjs": "tsc --project tsconfig.cjs.json --removeComments && tsc --project tsconfig.cjs.json --declaration --emitDeclarationOnly && node -e \"require('fs').writeFileSync('dist/cjs/package.json', JSON.stringify({type:'commonjs'}))\"",
     "build:esm": "tsc --project tsconfig.esm.json --removeComments && tsc --project tsconfig.esm.json --declaration --emitDeclarationOnly && node -e \"require('fs').writeFileSync('dist/esm/package.json', JSON.stringify({type:'module'}))\"",
     "build": "rimraf dist && npm run build:cjs && npm run build:esm",
+    "doc:api": "typedoc",
     "doc:dev": "vitepress dev doc",
-    "doc:build": "vitepress build doc"
+    "doc:build": "npm run doc:api && vitepress build doc"
   },
   "repository": {
     "type": "git",
@@ -74,7 +75,7 @@
     "messaging"
   ],
   "author": "Patrik Valkovic",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "amqplib": "^1.0.3"
   },
@@ -103,6 +104,8 @@
     "eslint": "^9.39.4",
     "jest": "^30.3.0",
     "rimraf": "^6.1.3",
+    "typedoc": "^0.28.19",
+    "typedoc-plugin-markdown": "^4.11.0",
     "typescript": "^6.0.2",
     "vitepress": "^1.6.4",
     "vitest": "^4.1.3",

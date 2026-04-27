@@ -1,2 +1,2 @@
-export { Channel, ChannelEventMap } from './channel';
+export { Channel } from './channel';
 export { ChannelImplementation } from './channel-implementation';

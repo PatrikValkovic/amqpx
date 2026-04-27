@@ -5,4 +5,5 @@ dist
 coverage
 doc_build
 doc/.vitepress/cache
+doc/api
 .claude
