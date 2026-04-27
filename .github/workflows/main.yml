@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  ci:
+    name: CI & Publish npm
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:coverage
+      - run: npm run build
+      - run: npm run doc:build
+      - run: npm publish --access public
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: doc_build/
+
+  publish-pages:
+    name: Publish to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: [ci]
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
