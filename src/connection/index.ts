@@ -1,2 +1,2 @@
 export { Connection, ConnectionState } from './connection';
-export { ConnectionImplementation } from './connection-implementation';
+export { ConnectionImplementation, connect } from './connection-implementation';

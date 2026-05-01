@@ -22,11 +22,11 @@ import { z } from 'zod'
 Wrap any existing consumer with a schema. The output type is inferred from the schema. This example assumes `defineTopology` sets up the connection and returns the exchange and queues — see [Topology](/guide/topology):
 
 ```typescript
-import { ConnectionImplementation } from 'amqpx'
+import { connect } from 'amqpx'
 import { ZodValidatedConsumer } from 'amqpx/zod'
 import { z } from 'zod'
 
-const connection = new ConnectionImplementation({ hostname: 'localhost', username: 'guest', password: 'guest' })
+const connection = await connect({ hostname: 'localhost', username: 'guest', password: 'guest' })
 
 const { queue } = await defineTopology(connection)
 

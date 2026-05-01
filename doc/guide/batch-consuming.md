@@ -13,9 +13,9 @@ A `BatchConsumer<T>` delivers messages in groups rather than one at a time. This
 This example assumes `defineTopology` sets up the connection and returns the exchange and queues — see [Topology](/guide/topology):
 
 ```typescript
-import { ConnectionImplementation } from 'amqpx'
+import { connect } from 'amqpx'
 
-const connection = new ConnectionImplementation({ hostname: 'localhost', username: 'guest', password: 'guest' })
+const connection = await connect({ hostname: 'localhost', username: 'guest', password: 'guest' })
 
 const { queue } = await defineTopology(connection)
 

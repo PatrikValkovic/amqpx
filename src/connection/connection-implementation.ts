@@ -169,3 +169,14 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
         return this.createChannel(isConfirmed).createProducerForQueue(queue, options);
     }
 }
+
+/**
+ * Creates a {@link ConnectionImplementation} and establishes the connection in one step.
+ * Equivalent to `new ConnectionImplementation(...args).connect()`.
+ * @param args - Same arguments as the {@link ConnectionImplementation} constructor.
+ */
+export async function connect(
+    ...args: ConstructorParameters<typeof ConnectionImplementation>
+): Promise<Connection> {
+    return new ConnectionImplementation(...args).connect();
+}

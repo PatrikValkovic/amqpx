@@ -25,33 +25,26 @@ npm install amqpx
 ## Quick example
 
 ```typescript
-import { ConnectionImplementation, AssertionMode } from 'amqpx'
+import { connect, AssertionMode } from 'amqpx'
 
 type Order = { orderId: string; total: number }
 
-const connection = new ConnectionImplementation({
+const connection = await connect({
   hostname: 'localhost',
   username: 'guest',
   password: 'guest',
 })
-await connection.connect()
 
 // Topology
-const producerChannel = await connection.createChannel()
-const queue = producerChannel.createQueue('orders', { durable: true })
-await queue.assert()
+const channel = await connection.createChannel()
+const queue = await channel.createQueue('orders', { durable: true })
 
 // Produce
 const producer = await queue.createProducer<Order>()
 await producer.publish({ orderId: 'abc-123', total: 49.99 })
 
 // Consume
-const consumerChannel = await connection.createChannel()
-const consumerQueue = consumerChannel.createQueue('orders', {
-  assertionMode: AssertionMode.Check,
-})
 const consumer = await consumerQueue.createConsumer<Order>({ prefetch: 10 })
-
 await consumer.listen(async ({ message }) => {
   console.log('order', message.orderId, 'total', message.total)
 })

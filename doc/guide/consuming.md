@@ -7,9 +7,9 @@ A `Consumer<T>` receives messages of type `T` from a queue. You register a handl
 Start from a queue. This example assumes `defineTopology` sets up the connection and returns the exchange and queues — see [Topology](/guide/topology):
 
 ```typescript
-import { ConnectionImplementation, ConsumptionFailureStrategy } from 'amqpx'
+import { connect, ConsumptionFailureStrategy } from 'amqpx'
 
-const connection = new ConnectionImplementation({ hostname: 'localhost', username: 'guest', password: 'guest' })
+const connection = await connect({ hostname: 'localhost', username: 'guest', password: 'guest' })
 
 const { queue } = await defineTopology(connection)
 

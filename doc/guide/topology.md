@@ -15,23 +15,21 @@ Connection
 
 ## Connection
 
-Create a `ConnectionImplementation` with your broker options and call `connect()`:
+Use `connect` to create a connection and establish it in one step:
 
 ```typescript
-import { ConnectionImplementation } from 'amqpx'
+import { connect } from 'amqpx'
 
-const connection = new ConnectionImplementation({
+const connection = await connect({
   hostname: 'localhost',
   port: 5672,
   username: 'guest',
   password: 'guest',
   vhost: '/',
 })
-
-await connection.connect()
 ```
 
-The constructor accepts:
+`connect` accepts:
 1. `options` — amqplib `Options.Connect` (hostname, port, vhost, credentials, etc.)
 2. `retryStrategy` _(optional)_ — how to handle reconnections (see below)
 3. `socketOptions` _(optional)_ — passed through to amqplib's socket
@@ -45,9 +43,9 @@ By default, amqpx retries up to **10 times** with exponential backoff starting a
 For example to has exponential delay starting at 200 ms with maximum 10 000 ms delay use `cappedExponentialBackoff`.
 
 ```typescript
-import { ConnectionImplementation, retryStrategies } from 'amqpx'
+import { connect, retryStrategies } from 'amqpx'
 
-const connection = new ConnectionImplementation(
+const connection = await connect(
   { hostname: 'localhost', username: 'guest', password: 'guest' },
   {
     reconnectionTimeoutMs: retryStrategies.cappedExponentialBackoff(200, 10_000),

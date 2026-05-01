@@ -7,10 +7,9 @@ A `Producer<T>` sends messages of type `T` to a and exchange or queue (through d
 The typical starting point is creating a producer from an exchange. This example assumes `defineTopology` sets up the connection and returns the exchange and queues — see [Topology](/guide/topology):
 
 ```typescript
-import { ConnectionImplementation } from 'amqpx'
+import { connect } from 'amqpx'
 
-const connection = new ConnectionImplementation({ hostname: 'localhost', username: 'guest', password: 'guest' })
-await connection.connect()
+const connection = await connect({ hostname: 'localhost', username: 'guest', password: 'guest' })
 
 const { exchange } = await defineTopology(connection)
 

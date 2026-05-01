@@ -5,7 +5,7 @@ Every subscriber receives every message, regardless of routing key. Uses RabbitM
 ## Code
 
 ```typescript
-import { ConnectionImplementation, Connection, predefined } from 'amqpx'
+import { connect, Connection, predefined } from 'amqpx'
 
 type Notification = { event: string; payload: unknown }
 
@@ -19,7 +19,7 @@ async function topology(connection: Connection) {
 
 // ---- Setup ----
 
-const connection = new ConnectionImplementation({
+const connection = await connect({
   hostname: 'localhost',
   port: 5672,
   username: 'guest',

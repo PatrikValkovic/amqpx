@@ -5,7 +5,7 @@ Multiple consumers compete for messages from a single queue. Each message is pro
 ## Code
 
 ```typescript
-import { ConnectionImplementation, AssertionMode, ConsumptionFailureStrategy, Queue } from 'amqpx'
+import { connect, Connection, AssertionMode, ConsumptionFailureStrategy, Queue } from 'amqpx'
 
 type Job = { jobId: string; payload: string }
 
@@ -31,7 +31,7 @@ async function doWork(job: Job): Promise<void> {
 
 // ---- Topology ----
 
-async function topology(connection: ConnectionImplementation) {
+async function topology(connection: Connection) {
   const channel = await connection.createChannel()
   const queue = channel.createQueue('jobs', { durable: true })
   return { queue }
@@ -39,7 +39,7 @@ async function topology(connection: ConnectionImplementation) {
 
 // ---- Setup ----
 
-const connection = new ConnectionImplementation({
+const connection = await connect({
   hostname: 'localhost',
   username: 'guest',
   password: 'guest',

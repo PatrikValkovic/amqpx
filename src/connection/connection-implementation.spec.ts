@@ -3,7 +3,7 @@ import * as amqp from 'amqplib';
 import { ChannelImplementation } from '../channel';
 import { TestExchange, TestQueue } from '../extensions/vitest';
 import { TooManyRetriesError } from '../errors';
-import { ConnectionImplementation } from './connection-implementation';
+import { ConnectionImplementation, connect } from './connection-implementation';
 import { ConnectionState } from './connection';
 
 vi.mock('amqplib');
@@ -382,5 +382,38 @@ describe('ConnectionImplementation', () => {
             const [calledWith] = exchange.createProducer.mock.calls[0]!;
             expect(calledWith.channel.wrapper.isConfirmed).toBe(true);
         });
+    });
+});
+
+describe('connect', () => {
+    let mockNativeConnection: EventEmitter & {
+        close: ReturnType<typeof vi.fn>;
+        createChannel: ReturnType<typeof vi.fn>;
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockNativeConnection = Object.assign(new EventEmitter(), {
+            close: vi.fn().mockResolvedValue(undefined),
+            createChannel: vi.fn().mockResolvedValue({}),
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        vi.mocked(amqp.connect).mockResolvedValue(mockNativeConnection as any);
+    });
+
+    it('should call amqp.connect with provided options and return a connected Connection', async () => {
+        const connection = await connect({ hostname: 'localhost' });
+
+        expect(amqp.connect).toHaveBeenCalledWith({ hostname: 'localhost' }, undefined);
+        expect(connection.state()).toBe(ConnectionState.connected);
+        await connection.close();
+    });
+
+    it('should forward socketOptions to amqp.connect', async () => {
+        const socketOptions = { timeout: 5000 };
+        const connection = await connect({ hostname: 'localhost' }, undefined, socketOptions);
+
+        expect(amqp.connect).toHaveBeenCalledWith({ hostname: 'localhost' }, socketOptions);
+        await connection.close();
     });
 });

@@ -5,7 +5,7 @@ Route messages to different consumers based on dot-separated routing key pattern
 ## Code
 
 ```typescript
-import { ConnectionImplementation, Connection } from 'amqpx'
+import { connect, Connection } from 'amqpx'
 
 type OrderEvent = {
   orderId: string
@@ -23,7 +23,7 @@ async function topology(connection: Connection) {
 
 // ---- Setup ----
 
-const connection = new ConnectionImplementation({
+const connection = await connect({
   hostname: 'localhost',
   username: 'guest',
   password: 'guest',
