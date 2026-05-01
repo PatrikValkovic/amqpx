@@ -85,3 +85,16 @@ export type HTTPBindingDetail = {
     arguments: object;
     properties_key: string;
 };
+
+export type HTTPQueueGet = {
+    payload_bytes: number;
+    redelivered: boolean;
+    exchange: string;
+    routing_key: string;
+    message_count: number;
+    properties: {
+        headers: object;
+    };
+    payload: string;
+    payload_encoding: string;
+};
