@@ -545,5 +545,49 @@ describe('BatchConsumer integration', () => {
             expect(queueStatus.message_stats.ack).toEqual(0);
             expect(queueStatus.message_stats.deliver).toEqual(5);
         });
+
+        it('should not contact broker with acknowledgement when waiting for previous batch and connection is lost', async () => {
+            const [latch, releaseLatch] = externallyResolvedPromise();
+
+            const consumer = new BatchConsumerImplementation<TestMessage>(consumerChannel, queue, {
+                batchSize: 5,
+                prefetch: 10,
+                maxWaitTimeForBatch: 5000,
+                maxWaitTimeForAck: 30_000,
+            });
+
+            const errorHandler = vi.fn();
+            consumer.on('error', errorHandler);
+
+            const listener = vi.fn()
+                .mockImplementationOnce(async () => {
+                    await latch;
+                    return undefined;
+                })
+                .mockResolvedValue(undefined);
+            await consumer.listen(listener);
+
+            await publishN(10);
+            await vi.waitFor(() => expect(listener).toHaveBeenCalled(), { timeout: 5000 });
+            await sleepPromise(PROPAGATION_DELAY);
+            const beforeQueueStatus = await rabbitApi.queueDetail(queueName);
+            expect(beforeQueueStatus.messages_unacknowledged).toEqual(10);
+            expect(beforeQueueStatus.message_stats.ack).toEqual(0);
+
+            await restartContainer(RABBIT_CONTAINER);
+            await waitForHealthy(RABBIT_CONTAINER);
+
+            await sleepPromise(20_000);
+            releaseLatch();
+
+            await sleepPromise(PROPAGATION_DELAY);
+            expect(errorHandler).not.toHaveBeenCalled();
+            expect(listener).toHaveBeenCalledTimes(4);
+            const queueStatus = await expectQueueDepth(queueName, 0);
+            await expectQueueDepth(dlqName, 0);
+            // no redelivery because broker was restarted
+            expect(queueStatus.message_stats.ack).toEqual(10);
+            expect(queueStatus.message_stats.deliver).toEqual(10);
+        });
     });
 });

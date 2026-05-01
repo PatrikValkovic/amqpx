@@ -20,6 +20,10 @@ export type BaseConsumerEventMap = {
      * Emitted when the consumer is closed and all in-flight messages have been processed.
      */
     close: [];
+    /**
+     * Emitted when an internal processing error occurs.
+     */
+    error: [error: Error];
     [event: string]: unknown[];
 };
 

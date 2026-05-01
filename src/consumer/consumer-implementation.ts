@@ -126,7 +126,10 @@ export class ConsumerImplementation<Message>
                 await originalChannel.nack(msg, false, true);
                 return;
             default:
-                throw new Error(`Not supported failure strategy: ${this.options.failureStrategy}`);
+                this.emit(
+                    'error',
+                    new Error(`Not supported failure strategy: ${this.options.failureStrategy}`),
+                );
             }
         } finally {
             consumerWrapper.messagesInFlight--;
