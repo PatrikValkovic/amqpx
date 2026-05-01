@@ -9,10 +9,6 @@ import { BaseConsumerEventMap } from './base-consumer';
  */
 export type BatchConsumerEventMap = BaseConsumerEventMap & {
     /**
-     * Emitted when an internal processing error occurs.
-     */
-    error: [error: Error];
-    /**
      * Emitted when the message handler or message parsing throws an error.
      */
     handlingFailed: [error: unknown];

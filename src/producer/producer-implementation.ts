@@ -18,7 +18,7 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
     private readonly options: Required<ProducerOptions<T>>;
     private readonly inFlight = new Set<InFlightEntry<T>>();
     private readonly pendingPublishes = new Set<Promise<boolean>>();
-    private readonly interval: ReturnType<typeof setInterval>;
+    private clearInterval: ReturnType<typeof setInterval> | undefined;
     private closed = false;
 
     constructor(
@@ -29,9 +29,9 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
         super();
         this.options = deepMerge({}, DEFAULT_PRODUCER_OPTIONS, options) as typeof DEFAULT_PRODUCER_OPTIONS;
 
-        this.channel.on('error', this.handleChannelError);
+        this.channel.on('close', this.handleChannelClose);
 
-        this.interval = setInterval(() => {
+        this.clearInterval = setInterval(() => {
             let deleted = 0;
             const now = performance.now();
             for (const entry of this.inFlight) {
@@ -43,7 +43,7 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
             if (deleted > 0)
                 debug('deleted-in-flight deleted=%d remaining=%d', deleted, this.inFlight.size);
         }, Math.max(100, this.options.errorWindow));
-        this.interval.unref();
+        this.clearInterval.unref();
     }
 
     async close(timeout = 30_000): Promise<void> {
@@ -58,11 +58,11 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
             }),
         ]);
 
-        clearInterval(this.interval);
-        this.channel.off('error', this.handleChannelError);
+        clearInterval(this.clearInterval);
+        this.channel.off('close', this.handleChannelClose);
     }
 
-    private readonly handleChannelError = () => {
+    private readonly handleChannelClose = () => {
         const now = performance.now();
         debug('channel-error in-flight=%d', this.inFlight.size);
         for (const entry of this.inFlight) {

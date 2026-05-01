@@ -192,7 +192,7 @@ describe('Producer', () => {
             expect(producer.inFlight.size).toBe(0);
         });
 
-        it('should republish in-flight messages when channel emits "error" event', async () => {
+        it('should republish in-flight messages when channel emits "close" event', async () => {
             vitest.useFakeTimers();
             // must be created a new to respect fake timers
             producer = new ProducerImplementation(channel, exchange);
@@ -201,7 +201,7 @@ describe('Producer', () => {
             // @ts-expect-error inFlight is private
             expect(producer.inFlight.size).toBe(1);
 
-            channel.emit('error', new Error('channel error'));
+            channel.emit('close');
 
             // Allow the republish microtask to complete
             await vitest.advanceTimersByTimeAsync(10_000);
@@ -211,7 +211,7 @@ describe('Producer', () => {
             expect(producer.inFlight.size).toBe(0);
         });
 
-        it('should not republish expired in-flight entries when channel emits "error" (advance past errorWindow)', async () => {
+        it('should not republish expired in-flight entries when channel emits "close" (advance past errorWindow)', async () => {
             vitest.useFakeTimers();
 
             const errorWindowProducer = new ProducerImplementation(channel, exchange, {
@@ -228,7 +228,7 @@ describe('Producer', () => {
 
                 // @ts-expect-error inFlight is private
                 expect(errorWindowProducer.inFlight.size).toBe(0);
-                channel.emit('error', new Error('channel error'));
+                channel.emit('close');
 
                 // Only the first publish should have been made; no republish
                 expect(channel.publish).toHaveBeenCalledTimes(1);
@@ -246,7 +246,7 @@ describe('Producer', () => {
 
             const republishError = new Error('republish failed');
             channel.publish.mockRejectedValue(republishError);
-            channel.emit('error', new Error('channel error'));
+            channel.emit('close');
 
             // republishFailed fires after several async hops inside publish():
             // Promise.all (key+buffer+exchangeName) → channel.publish rejection → .then().catch()
@@ -256,7 +256,7 @@ describe('Producer', () => {
             expect(msg).toBe(message);
         });
 
-        it('should not republish expired in-flight entries on channel error when errorWindow=0', async () => {
+        it('should not republish expired in-flight entries on channel close when errorWindow=0', async () => {
             vitest.useFakeTimers();
 
             // With errorWindow=0 entries have expiresAt=now, so they fail the expiresAt >= now
@@ -268,7 +268,7 @@ describe('Producer', () => {
             try {
                 await noWindowProducer.publish({ value: 1 });
 
-                channel.emit('error', new Error('channel error'));
+                channel.emit('close');
 
                 await vitest.advanceTimersByTimeAsync(10_000);
                 expect(channel.publish).toHaveBeenCalledTimes(1);

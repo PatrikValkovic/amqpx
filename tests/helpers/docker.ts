@@ -31,6 +31,11 @@ export async function restartContainer(name: string): Promise<void> {
     await execFile('docker', ['restart', name]);
 }
 
+export async function destroyContainer(name: string): Promise<void> {
+    await execFile('docker', ['stop', name]);
+    await execFile('docker', ['rm', name]);
+}
+
 export async function waitForHealthy(name: string, timeoutMs = 30_000): Promise<void> {
     const start = performance.now();
     while (performance.now() - start < timeoutMs) {

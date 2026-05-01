@@ -30,7 +30,7 @@ export const retryLoop = async <T>(
     let attempt = 0;
     let lastErr: unknown | null = null;
 
-    while (attempt < normalizedStrategy.maxRetries) {
+    while (attempt <= normalizedStrategy.maxRetries) {
         attempt++;
         debug('attempt current=%d total=%d', attempt, normalizedStrategy.maxRetries);
         try {

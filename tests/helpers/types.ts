@@ -64,3 +64,37 @@ export type HTTPQueueDetail = {
     type: string;
     vhost: string;
 };
+
+
+export type HTTPExchangeDetail = {
+    name: string;
+    type: string;
+    auto_delete: boolean;
+    durable: boolean;
+    internal: boolean;
+    arguments: object;
+    vhost: string;
+};
+
+export type HTTPBindingDetail = {
+    source: string;
+    vhost: string;
+    destination: string;
+    destination_type: string;
+    routing_key: string;
+    arguments: object;
+    properties_key: string;
+};
+
+export type HTTPQueueGet = {
+    payload_bytes: number;
+    redelivered: boolean;
+    exchange: string;
+    routing_key: string;
+    message_count: number;
+    properties: {
+        headers: object;
+    };
+    payload: string;
+    payload_encoding: string;
+};

@@ -27,7 +27,7 @@ describe('Retry', () => {
             await expect(
                 retryLoop(zeroDelayStrategy, callback),
             ).rejects.toThrow(TooManyRetriesError);
-            expect(callback).toHaveBeenCalledTimes(3);
+            expect(callback).toHaveBeenCalledTimes(4);
         });
 
         it('throws immediately when shouldRetry returns false', async () => {

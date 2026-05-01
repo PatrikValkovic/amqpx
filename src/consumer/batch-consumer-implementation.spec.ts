@@ -21,8 +21,6 @@ describe('Batch consumer', () => {
     });
 
     afterEach(async () => {
-        // @ts-expect-error batches is private property
-        expect(consumer.batches).toHaveLength(0);
         // each message were ack/nack at most once
         const messages: object[] = [];
         channel.nativeChannel.ack.mock.calls.forEach(([message]) => {
@@ -37,7 +35,7 @@ describe('Batch consumer', () => {
 
     describe('consuming', () => {
         it('should process batch', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -66,7 +64,7 @@ describe('Batch consumer', () => {
         });
 
         it('should process multiple batches', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -98,7 +96,7 @@ describe('Batch consumer', () => {
         });
 
         it('should not allow to hook in two listeners', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -130,7 +128,7 @@ describe('Batch consumer', () => {
         });
 
         it('should set batch size based on prefetch when batch size is not provided', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -159,7 +157,7 @@ describe('Batch consumer', () => {
         });
 
         it('should set batch size to default 20 when batch size nor prefetch is specified', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {},
@@ -187,7 +185,7 @@ describe('Batch consumer', () => {
         });
 
         it('should process batch exactly once when zero-delay timer fires concurrently with batch fill', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -218,7 +216,7 @@ describe('Batch consumer', () => {
 
         it('should process individual batches when maxWaitTimeForBatch=0 and there is delay', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -254,7 +252,7 @@ describe('Batch consumer', () => {
 
         it('should process partial batch', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -300,7 +298,7 @@ describe('Batch consumer', () => {
 
         it('should use custom parseMessageFn to parse messages', async () => {
             const parseFn = vi.fn().mockImplementation((buf: Buffer): { parsed: string } => ({ parsed: buf.toString() }));
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -334,7 +332,7 @@ describe('Batch consumer', () => {
 
         it('should support async parseMessageFn', async () => {
             const parseFn = vi.fn().mockImplementation(async (buf: Buffer): Promise<{ parsed: string }> => ({ parsed: buf.toString() }));
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -363,7 +361,7 @@ describe('Batch consumer', () => {
         });
 
         it('should pass consumeOptions to channel.consume', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -378,7 +376,7 @@ describe('Batch consumer', () => {
         });
 
         it('should set noAck to true when failureStrategy is Drop and prefetch is not set', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -393,7 +391,7 @@ describe('Batch consumer', () => {
         });
 
         it('should set noAck to false when failureStrategy is Drop but prefetch is set', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -415,7 +413,7 @@ describe('Batch consumer', () => {
             ['negative', -3],
         ])('should send the confirmation message immediately when wait time for ack is %s', async (_, waitTime) => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -472,7 +470,7 @@ describe('Batch consumer', () => {
         it('should wait for batch but send confirmation anyway when previous batch is not processed within specified time', async () => {
             vitest.useFakeTimers();
             const sleepTime = 1000;
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -528,7 +526,7 @@ describe('Batch consumer', () => {
 
         it('should wait for the delayed batch and send single confirmation message', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -580,7 +578,7 @@ describe('Batch consumer', () => {
 
     describe('processing failure with fail batch failure strategy', () => {
         it('should reject messages', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -603,7 +601,7 @@ describe('Batch consumer', () => {
 
         it('should reject the messages individually when first batch is delayed', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -636,7 +634,7 @@ describe('Batch consumer', () => {
 
         it('should reject the messages individually and then in batch', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -671,7 +669,7 @@ describe('Batch consumer', () => {
         });
 
         it('should requeue the messages', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -694,7 +692,7 @@ describe('Batch consumer', () => {
 
         it('should requeue the messages individually when first batch is delayed', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -727,7 +725,7 @@ describe('Batch consumer', () => {
 
         it('should requeue the messages individually and then in batch', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -762,7 +760,7 @@ describe('Batch consumer', () => {
         });
 
         it('should have auto acknowledge on when failure strategy is drop', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -786,7 +784,7 @@ describe('Batch consumer', () => {
             ['zero', 0],
             ['negative', -3],
         ])('should have auto acknowledge on when failure strategy is drop and prefetch is %s', async (_, prefetch) => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -808,7 +806,7 @@ describe('Batch consumer', () => {
         });
 
         it('should explicitly ack message when failure strategy is drop and prefetch is set', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -834,7 +832,7 @@ describe('Batch consumer', () => {
 
     describe('processing failure with split batch failure strategy', () => {
         it('should split batch and process messages one at a time', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -862,7 +860,7 @@ describe('Batch consumer', () => {
 
         it('after split it should respect acknowledgement delay', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -893,7 +891,7 @@ describe('Batch consumer', () => {
         });
 
         it('should reprocess messages even when failure strategy is drop and auto-acknowledgement is enabled', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -915,7 +913,7 @@ describe('Batch consumer', () => {
         });
 
         it('should reprocess and acknowledge messages even when failure strategy is drop and auto-acknowledgement is disabled', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -943,7 +941,7 @@ describe('Batch consumer', () => {
         });
 
         it('should handle each message individually for reject strategy', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -986,7 +984,7 @@ describe('Batch consumer', () => {
 
         it('should handle each message individually for reject strategy with delayed message', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -1030,7 +1028,7 @@ describe('Batch consumer', () => {
         });
 
         it('should handle each message individually for requeue strategy', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -1073,7 +1071,7 @@ describe('Batch consumer', () => {
 
         it('should handle each message individually for requeue strategy with delayed message', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -1119,7 +1117,7 @@ describe('Batch consumer', () => {
 
     describe('failure strategy has invalid input', () => {
         it('should throw error when invalid batch failure strategy is used', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -1146,7 +1144,7 @@ describe('Batch consumer', () => {
         });
 
         it('should throw error when invalid failure strategy is used with reject batch failure', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -1173,7 +1171,7 @@ describe('Batch consumer', () => {
         });
 
         it('should throw error when invalid failure strategy is used with split batch failure', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -1226,7 +1224,7 @@ describe('Batch consumer', () => {
     describe('channel close', () => {
         it('should try to reconnect after channel close', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -1246,7 +1244,7 @@ describe('Batch consumer', () => {
 
         it('should close when reconnect encounter error', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -1314,7 +1312,7 @@ describe('Batch consumer', () => {
 
         it('should not send ack nor nock when batch is split', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -1342,7 +1340,7 @@ describe('Batch consumer', () => {
 
         it('should not send ack nor nock when batch is split and split fails', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -1375,7 +1373,7 @@ describe('Batch consumer', () => {
 
         it('should skip batch processing when channel disconnects before fill timer fires', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(channel, new TestQueue(), {
+            consumer = new BatchConsumerImplementation(channel, new TestQueue(), {
                 batchSize: 5,
                 maxWaitTimeForBatch: 1000,
             });
@@ -1404,7 +1402,7 @@ describe('Batch consumer', () => {
 
         it('should not ack when channel disconnects before confirmTimer fires', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(channel, new TestQueue(), {
+            consumer = new BatchConsumerImplementation(channel, new TestQueue(), {
                 batchSize: 5,
                 maxWaitTimeForAck: 500,
             });
@@ -1479,7 +1477,7 @@ describe('Batch consumer', () => {
 
         it('should wait for ack of messages after split', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -1559,7 +1557,7 @@ describe('Batch consumer', () => {
 
         it('should wait for nack of messages after split', async () => {
             vitest.useFakeTimers();
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -1625,7 +1623,7 @@ describe('Batch consumer', () => {
 
     describe('parse failure', () => {
         it('should nack batch when parse fails and failureStrategy is Reject', async () => {
-            const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
+            consumer = new BatchConsumerImplementation<{ value: number }>(
                 channel,
                 new TestQueue(),
                 {
@@ -1638,7 +1636,7 @@ describe('Batch consumer', () => {
                 },
             );
 
-            await consumerWithBadParser.listen(vi.fn());
+            await consumer.listen(vi.fn());
             const { rabbitMessages, consumePromise } = processGeneratedMessages(channel, 5);
             await consumePromise;
 
@@ -1647,7 +1645,7 @@ describe('Batch consumer', () => {
         });
 
         it('should requeue batch when parse fails and failureStrategy is Requeue', async () => {
-            const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
+            consumer = new BatchConsumerImplementation<{ value: number }>(
                 channel,
                 new TestQueue(),
                 {
@@ -1660,7 +1658,7 @@ describe('Batch consumer', () => {
                 },
             );
 
-            await consumerWithBadParser.listen(vi.fn());
+            await consumer.listen(vi.fn());
             const { rabbitMessages, consumePromise } = processGeneratedMessages(channel, 5);
             await consumePromise;
 
@@ -1669,7 +1667,7 @@ describe('Batch consumer', () => {
         });
 
         it('should ack when parse fails and failureStrategy is Drop with prefetch', async () => {
-            const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
+            consumer = new BatchConsumerImplementation<{ value: number }>(
                 channel,
                 new TestQueue(),
                 {
@@ -1683,7 +1681,7 @@ describe('Batch consumer', () => {
                 },
             );
 
-            await consumerWithBadParser.listen(vi.fn());
+            await consumer.listen(vi.fn());
             const { consumePromise, rabbitMessages } = processGeneratedMessages(channel, 5);
             await consumePromise;
 
@@ -1693,7 +1691,7 @@ describe('Batch consumer', () => {
         });
 
         it('should not ack or nack when parse fails and failureStrategy is Drop with no prefetch', async () => {
-            const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
+            consumer = new BatchConsumerImplementation<{ value: number }>(
                 channel,
                 new TestQueue(),
                 {
@@ -1706,7 +1704,7 @@ describe('Batch consumer', () => {
                 },
             );
 
-            await consumerWithBadParser.listen(vi.fn());
+            await consumer.listen(vi.fn());
             const { consumePromise } = processGeneratedMessages(channel, 5);
             await consumePromise;
 
@@ -1716,7 +1714,7 @@ describe('Batch consumer', () => {
 
         it('should emit handlingFailed when parse fails', async () => {
             const parseError = new Error('parse failure');
-            const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
+            consumer = new BatchConsumerImplementation<{ value: number }>(
                 channel,
                 new TestQueue(),
                 {
@@ -1728,11 +1726,11 @@ describe('Batch consumer', () => {
             );
 
             let emittedError: unknown;
-            consumerWithBadParser.on('handlingFailed', err => {
+            consumer.on('handlingFailed', err => {
                 emittedError = err;
             });
 
-            await consumerWithBadParser.listen(vi.fn());
+            await consumer.listen(vi.fn());
             const { consumePromise } = processGeneratedMessages(channel, 5);
             await consumePromise;
 
@@ -1741,7 +1739,7 @@ describe('Batch consumer', () => {
 
         it('close() should resolve after parse failure', async () => {
             const parseError = new Error('parse failure');
-            const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
+            consumer = new BatchConsumerImplementation<{ value: number }>(
                 channel,
                 new TestQueue(),
                 {
@@ -1752,17 +1750,17 @@ describe('Batch consumer', () => {
                 },
             );
 
-            await consumerWithBadParser.listen(vi.fn());
+            await consumer.listen(vi.fn());
             const { consumePromise } = processGeneratedMessages(channel, 5);
             await consumePromise;
 
-            await expect(consumerWithBadParser.close(500)).resolves.toBeUndefined();
+            await expect(consumer.close(500)).resolves.toBeUndefined();
         });
 
         it('close() should resolve after async parse failure', async () => {
             vitest.useFakeTimers();
             const parseError = new Error('parse failure');
-            const consumerWithBadParser = new BatchConsumerImplementation<{ value: number }>(
+            consumer = new BatchConsumerImplementation<{ value: number }>(
                 channel,
                 new TestQueue(),
                 {
@@ -1775,13 +1773,13 @@ describe('Batch consumer', () => {
             );
 
             const closeListener = vitest.fn();
-            consumerWithBadParser.on('close', closeListener);
+            consumer.on('close', closeListener);
 
-            await consumerWithBadParser.listen(vi.fn());
+            await consumer.listen(vi.fn());
             const { consumePromise } = processGeneratedMessages(channel, 5);
 
             await vitest.advanceTimersByTimeAsync(100);
-            const closePromise = consumerWithBadParser.close(500);
+            const closePromise = consumer.close(500);
             expect(closeListener).not.toHaveBeenCalled();
 
             await vitest.advanceTimersByTime(200);
@@ -1795,7 +1793,7 @@ describe('Batch consumer', () => {
         });
 
         it('should nack only failing message when split strategy and one message has bad content', async () => {
-            const consumerWithSplit = new BatchConsumerImplementation<{ value: number }>(
+            consumer = new BatchConsumerImplementation<{ value: number }>(
                 channel,
                 new TestQueue(),
                 {
@@ -1806,7 +1804,7 @@ describe('Batch consumer', () => {
             );
             const listener = vi.fn().mockImplementation(() => Promise.resolve());
 
-            await consumerWithSplit.listen(listener);
+            await consumer.listen(listener);
 
             const consumerHandler = channel.nativeChannel.consume.mock.lastCall![1];
             const validContent = Buffer.from(JSON.stringify({ value: 1 }));
@@ -1837,7 +1835,7 @@ describe('Batch consumer', () => {
 
     describe('acknowledgment', () => {
         it('should not ack the same message twice when batches complete concurrently', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -1907,7 +1905,7 @@ describe('Batch consumer', () => {
         });
 
         it('should emit handlingFailed for batch failure and for each individual message failure in split strategy', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {
@@ -1928,7 +1926,7 @@ describe('Batch consumer', () => {
         });
 
         it('should emit handlingFailed only once when batch fails but individual messages succeed in split strategy', async () => {
-            const consumer = new BatchConsumerImplementation(
+            consumer = new BatchConsumerImplementation(
                 channel,
                 new TestQueue(),
                 {

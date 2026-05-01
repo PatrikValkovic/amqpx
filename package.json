@@ -77,7 +77,8 @@
   "author": "Patrik Valkovic",
   "license": "MIT",
   "dependencies": {
-    "amqplib": "^1.0.3"
+    "amqplib": "^1.0.3",
+    "safe-stable-stringify": "^2.5.0"
   },
   "peerDependencies": {
     "jest": "x.x.x",
