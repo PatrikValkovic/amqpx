@@ -51,5 +51,5 @@ export interface Queue {
      * By default, creates a new dedicated channel for the producer.
      * Pass a channel in `options` to use a specific one instead.
      */
-    createProducer<T>(options?: ProducerOptions<T>): Promise<Producer<T>>;
+    createProducer<T>(options?: ProducerOptions<T> & { isConfirmed?: boolean }): Promise<Producer<T>>;
 }

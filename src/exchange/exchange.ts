@@ -64,5 +64,5 @@ export interface Exchange {
      * This is generally not recommended, as each producer should have its own dedicated channel.
      * Consider using `connection.createProducerForExchange` instead.
      */
-    createProducer<T>(options?: ProducerOptions<T>): Promise<Producer<T>>;
+    createProducer<T>(options?: ProducerOptions<T>& { isConfirmed?: boolean }): Promise<Producer<T>>;
 }
