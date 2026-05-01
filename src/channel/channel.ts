@@ -50,8 +50,10 @@ export interface Channel extends EventEmitter<ChannelEventMap> {
     /**
      * Close the underlying amqplib channel.
      * For confirm channels, waits for all pending confirmations before closing.
+     * @param timeout - Maximum milliseconds to wait for pending confirmations before closing.
+     *   Throws `'Channel close timed out'` if exceeded. Waits 30s when omitted.
      */
-    close(): Promise<void>;
+    close(timeout?: number): Promise<void>;
 
     /**
      * Assert an exchange on the broker and return an {@link Exchange} handle.

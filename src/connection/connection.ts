@@ -89,8 +89,10 @@ export interface Connection extends EventEmitter<ConnectionEventMap> {
      * Gracefully closes the connection.
      * Emits the `close` event after the underlying amqplib connection is fully shut down.
      * Has no effect if the connection is in `preconnect` or `closed` state.
+     * @param timeout - Maximum milliseconds to wait for the underlying connection to close.
+     *   Throws `'Connection close timed out'` if exceeded. Waits 30s when omitted.
      */
-    close(): Promise<void>;
+    close(timeout?: number): Promise<void>;
 
     /**
      * Creates a new channel on this connection.

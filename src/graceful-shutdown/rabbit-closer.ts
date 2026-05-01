@@ -25,33 +25,40 @@ export class RabbitCloser {
     }
 
     /**
-     * Performs the orderly shutdown sequence.
+     * Performs the orderly shutdown sequence with an optional overall timeout budget.
+     * Each stage receives the remaining milliseconds at the moment it starts, so later
+     * stages (channels, connections) get progressively less time than earlier ones.
      * Waits for each stage to complete before proceeding to the next.
      * Follows sequence: producers → consumers → channels → connections.
+     * @param timeout - Total budget in milliseconds for the entire shutdown sequence.
+     *   When omitted, each stage waits indefinitely.
      */
-    async close(): Promise<void> {
+    async close(timeout = 60_000): Promise<void> {
+        const start = performance.now();
+        const remaining = () => Math.max(0, timeout - (performance.now() - start));
+
         debug('shutdown-started producers=%d consumers=%d connections=%d', this.producers.length, this.consumers.length, this.connections.length);
         debug('shutdown-producers-started');
         await Promise.all(
-            this.producers.map(async producer => {
-                await producer.close();
-            }),
+            this.producers.map(producer => producer.close(remaining())),
         );
+
         debug('shutdown-consumers-started');
         await Promise.all(
-            this.consumers.map(async consumer => {
-                await consumer.close();
-            }),
+            this.consumers.map(consumer => consumer.close(remaining())),
         );
+
         debug('shutdown-channels-started');
         await Promise.all([
-            ...this.producers.map(producer => producer.channel.close()),
-            ...this.consumers.map(consumer => consumer.channel.close()),
+            ...this.producers.map(producer => producer.channel.close(remaining())),
+            ...this.consumers.map(consumer => consumer.channel.close(remaining())),
         ]);
+
         debug('shutdown-connections-started');
         await Promise.all(
-            this.connections.map(connection => connection.close()),
+            this.connections.map(connection => connection.close(remaining())),
         );
+
         debug('shutdown-complete');
     }
 }

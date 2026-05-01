@@ -2,7 +2,7 @@ import { debuglog } from 'util';
 import { EventEmitter } from 'events';
 import { Channel } from '../channel';
 import { Exchange } from '../exchange';
-import { deepMerge, errToMessage, LIB_NAME } from '../utils';
+import { deepMerge, errToMessage, LIB_NAME, sleepPromise } from '../utils';
 import { Producer, ProducerEventMap } from './producer';
 import {
     DEFAULT_PRODUCER_OPTIONS,
@@ -46,10 +46,18 @@ export class ProducerImplementation<T> extends EventEmitter<ProducerEventMap<T>>
         this.interval.unref();
     }
 
-    async close(): Promise<void> {
+    async close(timeout = 30_000): Promise<void> {
         debug('closing');
         this.closed = true;
-        await Promise.allSettled(this.pendingPublishes);
+        const abort = new AbortController();
+        await Promise.race([
+            Promise.allSettled(this.pendingPublishes).then(() => abort.abort()),
+            sleepPromise(timeout).then(() => {
+                if (!abort.signal.aborted)
+                    throw new Error('Producer close timed out');
+            }),
+        ]);
+
         clearInterval(this.interval);
         this.channel.off('error', this.handleChannelError);
     }

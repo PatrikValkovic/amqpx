@@ -1,4 +1,5 @@
 import { TestConsumer, TestProducer, TestConnection } from '../extensions/vitest';
+import { sleepPromise } from '../utils';
 import { RabbitCloser } from './rabbit-closer';
 
 describe('RabbitCloser', () => {
@@ -213,6 +214,37 @@ describe('RabbitCloser', () => {
             await closer.close();
 
             expect(connection.close).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('close with timeout', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('should pass decrementing timeout', async () => {
+            vitest.useFakeTimers();
+            const closer = new RabbitCloser([connection], [consumer], [producer]);
+
+            producer.close.mockImplementation(() => sleepPromise(100));
+            consumer.close.mockImplementation(() => sleepPromise(100));
+            producer.channel.close.mockImplementation(() => sleepPromise(100));
+            consumer.channel.close.mockImplementation(() => sleepPromise(100));
+            connection.close.mockImplementation(() => sleepPromise(100));
+
+            const closePromise = closer.close(5000);
+            await vitest.advanceTimersByTimeAsync(5000);
+            await closePromise;
+
+            expect(producer.close).toHaveBeenCalledWith(expect.closeTo(5000, 0));
+            expect(consumer.close).toHaveBeenCalledWith(expect.closeTo(4900, 0));
+            expect(producer.channel.close).toHaveBeenCalledWith(expect.closeTo(4800, 0));
+            expect(consumer.channel.close).toHaveBeenCalledWith(expect.closeTo(4800, 0));
+            expect(connection.close).toHaveBeenCalledWith(expect.closeTo(4700, 0));
         });
     });
 });

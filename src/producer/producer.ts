@@ -29,8 +29,10 @@ export interface Producer<T, WholeMessage = T> extends EventEmitter<ProducerEven
 
     /**
      * Stops accepting new publishes and waits for all pending publish operations to settle.
+     * @param timeout - Maximum milliseconds to wait for pending publishes to settle.
+     *   Throws `'Producer close timed out'` if exceeded. Waits 30s when omitted.
      */
-    close(): Promise<void>;
+    close(timeout?: number): Promise<void>;
 
     /**
      * Publishes a message to RabbitMQ.

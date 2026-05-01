@@ -10,7 +10,7 @@ import { ProducerOptions, Producer } from '../producer';
 import { Consumer, ConsumerOptions, BatchConsumer, BatchConsumerOptions } from '../consumer';
 import { DEFAULT_RETRY_STRATEGY, retryLoop } from '../retry';
 import { DrainError } from '../errors';
-import { errToMessage, LIB_NAME, swallowError } from '../utils';
+import { errToMessage, LIB_NAME, sleepPromise, swallowError } from '../utils';
 import { Channel, ChannelEventMap } from './channel';
 import { ChannelWrapper, ChannelPublishOptions } from './types';
 
@@ -70,7 +70,7 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
         return this;
     }
 
-    async close(): Promise<void> {
+    async close(timeout = 30_000): Promise<void> {
         if (!this.wrapper.channel)
             return;
 
@@ -83,9 +83,23 @@ export class ChannelImplementation extends EventEmitter<ChannelEventMap> impleme
                 };
                 if (!wrapper.channel)
                     throw new Error('Internal error: channel is empty but app attempted to close it');
-                if (wrapper.isConfirmed)
-                    await swallowError((wrapper.channel as ConfirmChannel).waitForConfirms());
-                await swallowError(wrapper.channel.close?.());
+
+                const doClose = async (arg: typeof wrapper) => {
+                    if (!arg.channel)
+                        return;
+                    if (wrapper.isConfirmed)
+                        await swallowError((arg.channel as ConfirmChannel).waitForConfirms());
+                    await swallowError(arg.channel.close());
+                };
+                const abort = new AbortController();
+                await Promise.race([
+                    doClose(wrapper).then(() => abort.abort()),
+                    sleepPromise(timeout).then(() => {
+                        if (!abort.signal.aborted)
+                            throw new Error('Channel close timed out');
+                    }),
+                ]);
+
                 debug('closed');
             } finally {
                 this.closeHandler = null;

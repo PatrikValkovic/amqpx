@@ -9,7 +9,7 @@ import { Consumer, ConsumerOptions, BatchConsumer, BatchConsumerOptions } from '
 import { Queue } from '../queue';
 import { ProducerOptions, Producer } from '../producer';
 import { TooManyRetriesError } from '../errors';
-import { errToMessage, LIB_NAME, maskAmqpUrl } from '../utils';
+import { errToMessage, LIB_NAME, maskAmqpUrl, sleepPromise } from '../utils';
 import { Connection, ConnectionEventMap, ConnectionState } from './connection';
 
 const debug = debuglog(`${LIB_NAME}:connection`);
@@ -95,7 +95,7 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
         return this;
     }
 
-    async close(): Promise<void> {
+    async close(timeout = 30_000): Promise<void> {
         if ([ConnectionState.closed, ConnectionState.preconnect].includes(this.connectionState))
             return;
 
@@ -107,7 +107,14 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
             this.connectionState = ConnectionState.closing;
             const connection = await this.connection?.catch(() => { /* ignore */ });
             try {
-                await connection?.close();
+                const abort = new AbortController();
+                await Promise.race([
+                    Promise.resolve(connection?.close()).then(() => abort.abort()),
+                    sleepPromise(timeout).then(() => {
+                        if (!abort.signal.aborted)
+                            throw new Error('Connection close timed out');
+                    }),
+                ]);
             } finally {
                 // even when close fails clean up references
                 this.closingHandler = null;

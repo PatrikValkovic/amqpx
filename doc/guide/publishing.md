@@ -155,10 +155,12 @@ producer.on('republishFailed', (message, error) => {
 
 ## Closing a producer
 
-`producer.close()` waits for all in-flight publishes to complete before returning:
+`producer.close(timeout?)` waits for all in-flight publishes to complete before returning. 
+An optional timeout (ms) caps how long to wait — throws `'Producer close timed out'` if exceeded (by default waits 30s):
 
 ```typescript
-await producer.close()
+await producer.close()         // wait 30s
+await producer.close(5_000)    // wait up to 5s
 ```
 
 ## Other creation paths

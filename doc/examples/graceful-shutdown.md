@@ -17,7 +17,7 @@ const closer = new RabbitCloser(
 
 async function shutdown() {
   console.log('shutting down...')
-  await closer.close()
+  await closer.close(30_000)  // 30 s total budget across all stages
   console.log('shutdown complete')
   process.exit(0)
 }
@@ -29,3 +29,4 @@ process.on('SIGINT', shutdown)
 ## Key points
 
 - Pass all producers, consumers, and connections to a single `RabbitCloser`. You do not need to close channels manually — `RabbitCloser` handles them.
+- The timeout budget shrinks across stages: producers get the full budget, consumers get whatever remains after producers finish, channels and connections get even less. If a stage exceeds the remaining budget it throws.
