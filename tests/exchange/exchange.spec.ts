@@ -6,7 +6,7 @@ import {
     predefined,
 } from '../../src';
 import { DIRECT_OPTIONS } from '../helpers/broker-urls';
-import { compose, RABBIT_CONTAINER, waitForHealthy } from '../helpers/docker';
+import { compose, destroyContainer, RABBIT_CONTAINER, waitForHealthy } from '../helpers/docker';
 import { uniqueName } from '../helpers/names';
 import * as rabbitApi from '../helpers/rabbit-api';
 import { sleepPromise } from '../../src/utils';
@@ -231,7 +231,7 @@ describe('Exchange integration', () => {
                 routing_key: 'second-key',
             }));
 
-            await compose(['down']);
+            await destroyContainer(RABBIT_CONTAINER);
             await compose(['up', '-d']);
             await waitForHealthy(RABBIT_CONTAINER);
 
@@ -271,7 +271,7 @@ describe('Exchange integration', () => {
                 routing_key: '',
             }));
 
-            await compose(['down']);
+            await destroyContainer(RABBIT_CONTAINER);
             await compose(['up', '-d']);
             await waitForHealthy(RABBIT_CONTAINER);
 
@@ -321,7 +321,7 @@ describe('Exchange integration', () => {
                 },
             }));
 
-            await compose(['down']);
+            await destroyContainer(RABBIT_CONTAINER);
             await compose(['up', '-d']);
             await waitForHealthy(RABBIT_CONTAINER);
 
@@ -375,7 +375,7 @@ describe('Exchange integration', () => {
                 },
             }));
 
-            await compose(['down']);
+            await destroyContainer(RABBIT_CONTAINER);
             await compose(['up', '-d']);
             await waitForHealthy(RABBIT_CONTAINER);
 
@@ -415,7 +415,7 @@ describe('Exchange integration', () => {
                 routing_key: '',
             }));
 
-            await compose(['down']);
+            await destroyContainer(RABBIT_CONTAINER);
             await compose(['up', '-d']);
             await waitForHealthy(RABBIT_CONTAINER);
 

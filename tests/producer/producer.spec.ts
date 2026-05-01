@@ -2,14 +2,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     Channel,
     ConnectionImplementation,
+    ConnectionState,
     Exchange,
     Producer,
     Queue,
 } from '../../src';
-import { DIRECT_OPTIONS } from '../helpers/broker-urls';
+import { DIRECT_OPTIONS, PROXIED_OPTIONS } from '../helpers/broker-urls';
+import {
+    compose,
+    destroyContainer,
+    RABBIT_CONTAINER,
+    restartContainer,
+    startContainer,
+    stopContainer,
+    waitForHealthy,
+} from '../helpers/docker';
 import { uniqueName } from '../helpers/names';
 import * as rabbitApi from '../helpers/rabbit-api';
 import { sleepPromise } from '../../src/utils';
+import { withToxic } from '../helpers/toxiproxy';
 
 const PROPAGATION_DELAY = 10_000;
 
@@ -138,7 +149,7 @@ describe('Producer integration', () => {
 
             await sleepPromise(PROPAGATION_DELAY);
             const q1Status = await rabbitApi.queueDetail(q1);
-            const q2Status = await rabbitApi.queueDetail(q1);
+            const q2Status = await rabbitApi.queueDetail(q2);
             expect(q1Status.messages).toBe(1);
             expect(q2Status.messages).toBe(1);
         });
@@ -219,6 +230,141 @@ describe('Producer integration', () => {
     });
 
     describe('reconnect', () => {
+        it('should publish successfully after broker restart', async () => {
+            producer = await queue.createProducer();
 
+            await restartContainer(RABBIT_CONTAINER);
+            await waitForHealthy(RABBIT_CONTAINER);
+            await vi.waitFor(
+                () => expect(connection.state()).toBe(ConnectionState.connected),
+                { timeout: 60_000 },
+            );
+
+            await producer.publish({ value: 1 });
+
+            await sleepPromise(PROPAGATION_DELAY);
+            const status = await rabbitApi.queueDetail(queueName);
+            expect(status.messages).toBe(1);
+        });
+
+        it('should publish once broker is up again', async () => {
+            producer = await queue.createProducer();
+
+            await stopContainer(RABBIT_CONTAINER);
+
+            const publishPromise = producer.publish({ value: 1 });
+            await sleepPromise(PROPAGATION_DELAY);
+
+            await startContainer(RABBIT_CONTAINER);
+            await waitForHealthy(RABBIT_CONTAINER);
+
+            await publishPromise;
+
+            await sleepPromise(PROPAGATION_DELAY);
+            const status = await rabbitApi.queueDetail(queueName);
+            expect(status.messages).toBe(1);
+        });
+
+        it('should republish in-flight messages after channel error within error window', async () => {
+            producer = await queue.createProducer({ errorWindow: 10_000 });
+
+            await producer.publish({ value: 1 });
+
+            await destroyContainer(RABBIT_CONTAINER);
+            await sleepPromise(15_000);
+            await compose(['up', '-d']);
+            await waitForHealthy(RABBIT_CONTAINER);
+
+            await sleepPromise(PROPAGATION_DELAY);
+            const status = await rabbitApi.queueDetail(queueName);
+            expect(status.messages).toBe(1);
+        });
+
+        it('should not republish in-flight messages after channel if confirm channel is used', async () => {
+            const confirmChannel = connection.createChannel(true);
+            producer = await confirmChannel.createProducerForQueue(queue, {
+                errorWindow: 15_000,
+            });
+
+            await producer.publish({ value: 2 });
+
+            await destroyContainer(RABBIT_CONTAINER);
+            await sleepPromise(15_000);
+            await compose(['up', '-d']);
+            await waitForHealthy(RABBIT_CONTAINER);
+
+            await exchange.assert();
+            await sleepPromise(PROPAGATION_DELAY);
+            const status = await rabbitApi.queueDetail(queueName);
+            expect(status.messages).toBe(0);
+        });
+
+        it('should emit republishFailed when connection is closed before republish can complete', async () => {
+            // Use a separate connection that will not retry so republish fails immediately.
+            const nonRetryConnection = new ConnectionImplementation(DIRECT_OPTIONS, { maxRetries: 0, reconnectionTimeoutMs: 0 });
+            const nonRetryChannel = nonRetryConnection.createChannel();
+            const nonRetryQueue = await nonRetryChannel.createQueue(queueName, { durable: true, autoDelete: false });
+            const nonRetryProducer = await nonRetryQueue.createProducer<TestMessage>({ errorWindow: 30_000 });
+
+            try {
+                await nonRetryProducer.publish({ value: 1 });
+
+                const republishFailed = vi.fn();
+                nonRetryProducer.on('republishFailed', republishFailed);
+
+                await stopContainer(RABBIT_CONTAINER);
+
+                // Connection exhausts retries immediately (maxRetries: 0) and closes.
+                // The channel error then triggers handleChannelError, which calls publish()
+                // on a closed connection → publish throws → republishFailed is emitted.
+                await vi.waitFor(
+                    () => expect(republishFailed).toHaveBeenCalledTimes(1),
+                    { timeout: 30_000 },
+                );
+            } finally {
+                await nonRetryConnection.close().catch(() => { /* already closed */ });
+                await startContainer(RABBIT_CONTAINER);
+                await waitForHealthy(RABBIT_CONTAINER);
+            }
+        });
+    });
+
+    describe('close', () => {
+        it('should close consumer', async () => {
+            producer = await queue.createProducer();
+            await producer.close();
+            await expect(
+                producer.publish({ value: 1 }),
+            ).rejects.toThrow('Producer is closed');
+        });
+
+        it('should wait for messages in-flight', async () => {
+            const toxiConnection = new ConnectionImplementation(PROXIED_OPTIONS);
+            const confirmChannel = toxiConnection.createChannel(true);
+            producer = await confirmChannel.createProducerForExchange(exchange);
+
+            await withToxic(
+                'rabbit',
+                {
+                    type: 'latency',
+                    stream: 'upstream',
+                    toxicity: 1,
+                    attributes: { latency: 500 },
+                },
+                async () => {
+                    const publishPromise = producer.publish({ value: 1 });
+                    await sleepPromise(100);
+                    const closePromise = await producer.close();
+                    await Promise.all([
+                        publishPromise,
+                        closePromise,
+                    ]);
+                },
+            );
+
+            await sleepPromise(PROPAGATION_DELAY);
+            const status = await rabbitApi.queueDetail(queueName);
+            expect(status.messages).toBe(1);
+        });
     });
 });
