@@ -2,7 +2,7 @@ import { describe, expect, afterEach, vi } from 'vitest';
 import * as amqp from 'amqplib';
 import { ConnectionImplementation, ConnectionState } from '../../src';
 import { DIRECT_OPTIONS, PROXIED_OPTIONS } from '../helpers/broker-urls';
-import { RABBIT_CONTAINER, restartContainer, startContainer, stopContainer } from '../helpers/docker';
+import { RABBIT_CONTAINER, restartContainer, stopContainer } from '../helpers/docker';
 import { withToxic } from '../helpers/toxiproxy';
 import { sleepPromise } from '../../src/utils';
 

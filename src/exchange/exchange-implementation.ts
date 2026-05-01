@@ -1,4 +1,5 @@
 import { debuglog } from 'util';
+import stableJsonStringify from 'safe-stable-stringify';
 import { Channel } from '../channel';
 import { Queue } from '../queue';
 import { ProducerOptions, Producer, ProducerImplementation } from '../producer';
@@ -77,7 +78,8 @@ export class ExchangeImplementation implements Exchange {
         const doesBindingMatch = (binding: Binding) =>
             binding.type === BindingType.queue &&
             binding.pattern === pattern &&
-            binding.queue === queue;
+            binding.queue === queue &&
+            stableJsonStringify(binding.args) === stableJsonStringify(args);
 
         if (this.bindings.every(binding => !doesBindingMatch(binding))) {
             this.bindings.push({
@@ -104,7 +106,8 @@ export class ExchangeImplementation implements Exchange {
         const doesBindingMatch = (binding: Binding) =>
             binding.type === BindingType.exchange &&
             binding.pattern === pattern &&
-            binding.exchange === exchange;
+            binding.exchange === exchange &&
+            stableJsonStringify(binding.args) === stableJsonStringify(args);
 
         if (this.bindings.every(binding => !doesBindingMatch(binding))) {
             this.bindings.push({
