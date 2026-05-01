@@ -9,7 +9,7 @@ import {
     BatchFailureStrategy,
     BatchRecord,
     BatchState,
-    ConsumerWrapper,
+    BatchConsumerWrapper,
     ConsumptionFailureStrategy,
     DEFAULT_CONSUMER_OPTIONS,
 } from './types';
@@ -24,7 +24,6 @@ export class BatchConsumerImplementation<Message>
     private static readonly DEFAULT_BATCH_SIZE = 20;
 
     private readonly options: Required<BatchConsumerOptions<Message>>;
-    private batches: BatchRecord[] = [];
     private batchFillTimer: NodeJS.Timeout | undefined;
 
     constructor(
@@ -52,10 +51,11 @@ export class BatchConsumerImplementation<Message>
             await channel.prefetch(this.options.prefetch);
 
             // this must be an object, so it is passed down as reference
-            const consumerWrapper: Partial<ConsumerWrapper<BatchConsumerCallbackFn<Message>>> = {
+            const consumerWrapper: Partial<BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>> = {
                 callback,
                 messagesInFlight: 0,
                 isConnected: true,
+                batches: [],
             };
             let listenerCloseHandler: () => void;
             const channelCloseHandler = () => {
@@ -78,7 +78,7 @@ export class BatchConsumerImplementation<Message>
                     this,
                     callback,
                     channel,
-                    consumerWrapper as ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+                    consumerWrapper as BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
                     queueName,
                 ),
                 {
@@ -87,7 +87,7 @@ export class BatchConsumerImplementation<Message>
                 },
             );
 
-            return consumerWrapper as ConsumerWrapper<BatchConsumerCallbackFn<Message>>;
+            return consumerWrapper as BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>;
         })();
 
         await this.consumer;
@@ -97,7 +97,7 @@ export class BatchConsumerImplementation<Message>
     private async messageReceiver(
         callback: BatchConsumerCallbackFn<Message>,
         originalChannel: amqp.Channel,
-        consumerWrapper: ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        consumerWrapper: BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
         queueName: string,
         msg: amqp.ConsumeMessage | null,
     ) {
@@ -112,15 +112,15 @@ export class BatchConsumerImplementation<Message>
         debug('receive-message queue=%s in-flight=%d', queueName, consumerWrapper.messagesInFlight);
 
         // Create new batch if necessary
-        if (this.batches.length === 0 || last(this.batches)?.state !== BatchState.WaitingForData) {
-            this.batches.push({
+        if (consumerWrapper.batches.length === 0 || last(consumerWrapper.batches)?.state !== BatchState.WaitingForData) {
+            consumerWrapper.batches.push({
                 messages: [],
                 state: BatchState.WaitingForData,
             });
         }
 
         // Add message to the last batch
-        const lastBatch = last(this.batches);
+        const lastBatch = last(consumerWrapper.batches);
         if (!lastBatch)
             throw this.processError('Internal error: Cannot get last batch');
         lastBatch.messages.push({ rabbitMessage: msg });
@@ -192,7 +192,7 @@ export class BatchConsumerImplementation<Message>
         callback: BatchConsumerCallbackFn<Message>,
         originalChannel: amqp.Channel,
         batch: BatchRecord,
-        consumerWrapper: ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        consumerWrapper: BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
         queueName: string,
     ) {
         // guard in case processing is called twice on the same batch
@@ -241,7 +241,7 @@ export class BatchConsumerImplementation<Message>
         callback: BatchConsumerCallbackFn<Message>,
         originalChannel: amqp.Channel,
         batch: BatchRecord,
-        consumerWrapper: ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        consumerWrapper: BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
         queueName: string,
     ) {
         batch.state = BatchState.Failed;
@@ -252,7 +252,7 @@ export class BatchConsumerImplementation<Message>
             return;
         }
 
-        const batchIndex = this.batches.indexOf(batch);
+        const batchIndex = consumerWrapper.batches.indexOf(batch);
         if (batchIndex < 0)
             throw this.processError('Internal error: Cannot find batch in the list of batches');
 
@@ -276,7 +276,7 @@ export class BatchConsumerImplementation<Message>
     private async handleFailureStrategy(
         originalChannel: amqp.Channel,
         batch: BatchRecord,
-        consumerWrapper: ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        consumerWrapper: BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
         batchIndex: number,
         queueName: string,
     ) {
@@ -328,7 +328,7 @@ export class BatchConsumerImplementation<Message>
     private async splitBatch(
         originalChannel: amqp.Channel,
         batch: BatchRecord,
-        consumerWrapper: ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        consumerWrapper: BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
         batchIndex: number,
         callback: BatchConsumerCallbackFn<Message>,
         queueName: string,
@@ -338,7 +338,7 @@ export class BatchConsumerImplementation<Message>
             state: BatchState.WaitingForData,
             messages: [message],
         }));
-        this.batches.splice(batchIndex, 1, ...splitBatches);
+        consumerWrapper.batches.splice(batchIndex, 1, ...splitBatches);
         await Promise.all(splitBatches.map(batch => this.handleBatch(
             callback,
             originalChannel,
@@ -349,11 +349,11 @@ export class BatchConsumerImplementation<Message>
     }
 
     private removeProcessedBatches(
-        consumerWrapper: ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        consumerWrapper: BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
         queueName: string,
     ) {
         if (!consumerWrapper.isConnected || this.shouldAutoAck) {
-            this.batches
+            consumerWrapper.batches
                 .filter(batch =>
                     batch.state === BatchState.Processed || batch.state === BatchState.Acknowledging,
                 ).forEach(batch => {
@@ -362,7 +362,7 @@ export class BatchConsumerImplementation<Message>
                 });
         }
 
-        const indicesOfBatchesToRemove = this.batches
+        const indicesOfBatchesToRemove = consumerWrapper.batches
             .flatMap((b, i) => {
                 if (b.state === BatchState.Acknowledged)
                     return [i];
@@ -373,10 +373,10 @@ export class BatchConsumerImplementation<Message>
 
         debug('acknowledged-cleanup queue=%s batches=%d', queueName, indicesOfBatchesToRemove.length);
         for (const index of indicesOfBatchesToRemove.reverse()) {
-            const batch = this.batches[index];
+            const batch = consumerWrapper.batches[index];
             if (!batch)
                 throw this.processError('Internal error: Batch for removal not found');
-            this.batches.splice(index, 1);
+            consumerWrapper.batches.splice(index, 1);
             clearTimeout(batch.confirmTimer);
             batch.confirmTimer = undefined;
             consumerWrapper.messagesInFlight -= batch.messages.length;
@@ -387,24 +387,24 @@ export class BatchConsumerImplementation<Message>
     }
 
     private async planMessageAcknowledgment(
-        consumerWrapper: ConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        consumerWrapper: BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
         originalChannel: amqp.Channel,
         queueName: string,
     ) {
-        if (this.batches.length === 0)
+        if (consumerWrapper.batches.length === 0)
             return;
 
         if (!consumerWrapper.isConnected || this.shouldAutoAck)
             return;
 
         // for first X batches we can use confirmation with "up to" semantic
-        const firstUnprocessedIndex = this.batches.findIndex(
+        const firstUnprocessedIndex = consumerWrapper.batches.findIndex(
             ({ state }) =>
                 [BatchState.WaitingForData, BatchState.Processing, BatchState.Failed].includes(state),
         );
-        const processedToIndex = firstUnprocessedIndex < 0 ? this.batches.length : firstUnprocessedIndex;
+        const processedToIndex = firstUnprocessedIndex < 0 ? consumerWrapper.batches.length : firstUnprocessedIndex;
         // batches only in states Processed, Acknowledging, and Acknowledged
-        const batchesToConfirm = this.batches.slice(0, processedToIndex);
+        const batchesToConfirm = consumerWrapper.batches.slice(0, processedToIndex);
         batchesToConfirm.forEach(batch => {
             clearTimeout(batch.confirmTimer);
             batch.confirmTimer = undefined;
@@ -432,7 +432,7 @@ export class BatchConsumerImplementation<Message>
 
         // No bulk-ack possible (blocking batch before them): install confirmTimers for
         // Processed batches that are waiting on an earlier unfinished batch.
-        this.batches
+        consumerWrapper.batches
             .filter(batch =>
                 batch.state === BatchState.Processed && !batch.confirmTimer,
             )

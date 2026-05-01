@@ -201,3 +201,7 @@ export type ConsumerWrapper<Callback> = {
     messagesInFlight: number;
     isConnected: boolean;
 };
+
+export type BatchConsumerWrapper<Callback> = ConsumerWrapper<Callback> & {
+    batches: BatchRecord[];
+};
