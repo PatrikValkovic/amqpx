@@ -1,0 +1,460 @@
+import { debuglog } from 'util';
+import * as amqp from 'amqplib';
+import { Queue } from '../queue';
+import { Channel } from '../channel';
+import { deepMerge, errToMessage, last, LIB_NAME } from '../utils';
+import {
+    BatchConsumerCallbackFn,
+    BatchConsumerOptions,
+    BatchFailureStrategy,
+    BatchRecord,
+    BatchState,
+    BatchConsumerWrapper,
+    ConsumptionFailureStrategy,
+    DEFAULT_CONSUMER_OPTIONS,
+} from './types';
+import { BatchConsumer, BatchConsumerEventMap } from './batch-consumer';
+import { BaseConsumer } from './base-consumer';
+
+const debug = debuglog(`${LIB_NAME}:consume:batch`);
+
+export class BatchConsumerImplementation<Message>
+    extends BaseConsumer<BatchConsumerCallbackFn<Message>, BatchConsumerEventMap>
+    implements BatchConsumer<Message> {
+    private static readonly DEFAULT_BATCH_SIZE = 20;
+
+    private readonly options: Required<BatchConsumerOptions<Message>>;
+    private batchFillTimer: NodeJS.Timeout | undefined;
+
+    constructor(
+        channel: Channel,
+        queue: Queue,
+        options: BatchConsumerOptions<Message> = {},
+    ) {
+        super(channel, queue);
+        this.options = deepMerge({}, DEFAULT_CONSUMER_OPTIONS, options) as typeof DEFAULT_CONSUMER_OPTIONS;
+        if (this.effectiveBatchSize <= 1 && this.options.batchFailureStrategy === BatchFailureStrategy.Split)
+            throw new Error('Cannot have split batch failure strategy when batch size is 1');
+    }
+
+    async listen(callback: BatchConsumerCallbackFn<Message>) {
+        if (this.consumer)
+            throw new Error('Listener is already attached');
+
+        this.consumer = (async () => {
+            const [channel, queueName] = await Promise.all([
+                this.channel.native(),
+                this.queue.name(),
+            ]);
+
+            debug('start-listening queue=%s prefetch=%d ack=%s', queueName, this.options.prefetch, !this.shouldAutoAck);
+            await channel.prefetch(this.options.prefetch);
+
+            // this must be an object, so it is passed down as reference
+            const consumerWrapper: Partial<BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>> = {
+                callback,
+                messagesInFlight: 0,
+                isConnected: true,
+                batches: [],
+            };
+            let listenerCloseHandler: () => void;
+            const channelCloseHandler = () => {
+                debug(`channel-closed queue=%s`, queueName);
+                consumerWrapper.isConnected = false;
+                this.off('close', listenerCloseHandler);
+                this.channelCloseCallback();
+            };
+            listenerCloseHandler = () => {
+                debug(`catch-close-event queue=%s`, queueName);
+                consumerWrapper.isConnected = false;
+                this.channel.off('close', channelCloseHandler);
+            };
+            this.channel.once('close', channelCloseHandler);
+            this.once('close', listenerCloseHandler);
+
+            consumerWrapper.amqpConsumer = await channel.consume(
+                queueName,
+                this.messageReceiver.bind(
+                    this,
+                    callback,
+                    channel,
+                    consumerWrapper as BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+                    queueName,
+                ),
+                {
+                    ...this.options.consumeOptions,
+                    noAck: this.shouldAutoAck,
+                },
+            );
+
+            return consumerWrapper as BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>;
+        })();
+
+        await this.consumer;
+        return this;
+    }
+
+    private async messageReceiver(
+        callback: BatchConsumerCallbackFn<Message>,
+        originalChannel: amqp.Channel,
+        consumerWrapper: BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        queueName: string,
+        msg: amqp.ConsumeMessage | null,
+    ) {
+        // empty message means consumer is canceled
+        if (!msg) {
+            debug('receive-empty-message queue=%s', queueName);
+            await this.close();
+            return;
+        }
+
+        consumerWrapper.messagesInFlight++;
+        debug('receive-message queue=%s in-flight=%d', queueName, consumerWrapper.messagesInFlight);
+
+        // Create new batch if necessary
+        if (consumerWrapper.batches.length === 0 || last(consumerWrapper.batches)?.state !== BatchState.WaitingForData) {
+            consumerWrapper.batches.push({
+                messages: [],
+                state: BatchState.WaitingForData,
+            });
+        }
+
+        // Add message to the last batch
+        const lastBatch = last(consumerWrapper.batches);
+        if (!lastBatch)
+            throw this.processError('Internal error: Cannot get last batch');
+        lastBatch.messages.push({ rabbitMessage: msg });
+
+        // Last batch have enough messages, process it
+        if (lastBatch.messages.length >= this.effectiveBatchSize) {
+            debug('processing-batch queue=%s reason=%s', queueName, 'full-batch');
+            clearTimeout(this.batchFillTimer);
+            this.batchFillTimer = undefined;
+            await this.handleBatch(
+                callback,
+                originalChannel,
+                lastBatch,
+                consumerWrapper,
+                queueName,
+            );
+            return;
+        }
+
+        // Last batch has not enough messages, set max wait time before processing
+        if (!this.batchFillTimer) {
+            this.batchFillTimer = setTimeout(async () => {
+                debug('processing-batch queue=%s reason=%s', queueName, 'timeout');
+                this.batchFillTimer = undefined;
+                await this.handleBatch(
+                    callback,
+                    originalChannel,
+                    lastBatch,
+                    consumerWrapper,
+                    queueName,
+                );
+            }, this.maxWaitTimeForBatch);
+        }
+    }
+
+    private get effectiveBatchSize() {
+        if (this.options.batchSize >= 0)
+            return this.options.batchSize;
+        if (this.options.prefetch > 0)
+            return this.options.prefetch;
+        debug(
+            'use-default-batch-size effective-batch-size=%d provided-batch-size=%d provided-prefetch=%d',
+            BatchConsumerImplementation.DEFAULT_BATCH_SIZE,
+            this.options.batchSize,
+            this.options.prefetch,
+        );
+        return BatchConsumerImplementation.DEFAULT_BATCH_SIZE;
+    }
+
+    private get shouldAutoAck() {
+        return this.options.failureStrategy === ConsumptionFailureStrategy.Drop && this.options.prefetch <= 0;
+    }
+
+    private get maxWaitTimeForAck() {
+        return Math.max(this.options.maxWaitTimeForAck, 0);
+    }
+
+    private get maxWaitTimeForBatch() {
+        return Math.max(this.options.maxWaitTimeForBatch, 0);
+    }
+
+    private processError(message: string) {
+        const err =  new Error(message);
+        this.emit('error', err);
+        return err;
+    }
+
+    private async handleBatch(
+        callback: BatchConsumerCallbackFn<Message>,
+        originalChannel: amqp.Channel,
+        batch: BatchRecord,
+        consumerWrapper: BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        queueName: string,
+    ) {
+        // guard in case processing is called twice on the same batch
+        if (batch.state !== BatchState.WaitingForData)
+            return;
+
+        if (!consumerWrapper.isConnected) {
+            debug('batch-acknowledged queue=%s reason=%s', queueName, 'disconnected');
+            batch.state = BatchState.Acknowledged;
+            return;
+        }
+
+        try {
+            debug('processing-batch-started queue=%s batch-size=%d', queueName, batch.messages.length);
+            batch.state = BatchState.Processing;
+            const parsedMessages = await Promise.all(
+                batch.messages.map(async ({ rabbitMessage }) => ({
+                    rabbitMessage,
+                    message: await this.options.parseMessageFn(rabbitMessage.content),
+                })),
+            );
+            await callback({
+                messages: parsedMessages,
+                channel: this.channel,
+            });
+            debug('batch-processed queue=%s reason=%s', queueName, 'succeess');
+            batch.state = BatchState.Processed;
+        } catch (error) {
+            debug('batch-processing-failed queue=%s error=%s strategy=%s', queueName, errToMessage(error), this.options.batchFailureStrategy);
+            this.emit('handlingFailed', error);
+            await this.handleBatchError(
+                callback,
+                originalChannel,
+                batch,
+                consumerWrapper,
+                queueName,
+            );
+        } finally {
+            await this.planMessageAcknowledgment(consumerWrapper, originalChannel, queueName);
+            this.removeProcessedBatches(consumerWrapper, queueName);
+            debug('processing-batch-finished queue=%s batch-size=%d', queueName, batch.messages.length);
+        }
+    }
+
+    private async handleBatchError(
+        callback: BatchConsumerCallbackFn<Message>,
+        originalChannel: amqp.Channel,
+        batch: BatchRecord,
+        consumerWrapper: BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        queueName: string,
+    ) {
+        batch.state = BatchState.Failed;
+
+        if (!consumerWrapper.isConnected) {
+            debug('batch-acknowledged queue=%s reason=%s', queueName, 'disconnected');
+            batch.state = BatchState.Acknowledged;
+            return;
+        }
+
+        const batchIndex = consumerWrapper.batches.indexOf(batch);
+        if (batchIndex < 0)
+            throw this.processError('Internal error: Cannot find batch in the list of batches');
+
+        const strategy = this.options.batchFailureStrategy;
+        if (strategy === BatchFailureStrategy.Fail || batch.messages.length <= 1) {
+            await this.handleFailureStrategy(originalChannel, batch, consumerWrapper, batchIndex, queueName);
+        } else if (strategy === BatchFailureStrategy.Split) {
+            await this.splitBatch(
+                originalChannel,
+                batch,
+                consumerWrapper,
+                batchIndex,
+                callback,
+                queueName,
+            );
+        } else {
+            throw this.processError(`Not supported batch failure strategy: ${strategy}`);
+        }
+    }
+
+    private async handleFailureStrategy(
+        originalChannel: amqp.Channel,
+        batch: BatchRecord,
+        consumerWrapper: BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        batchIndex: number,
+        queueName: string,
+    ) {
+        switch (this.options.failureStrategy) {
+        case ConsumptionFailureStrategy.Drop:
+            batch.state = BatchState.Processed;
+            debug('batch-processed queue=%s reason=%s', queueName, 'drop-strategy');
+            await this.planMessageAcknowledgment(consumerWrapper, originalChannel, queueName);
+            break;
+
+        case ConsumptionFailureStrategy.Requeue:
+            await this.nackMessages(originalChannel, batch, batchIndex, true, queueName);
+            break;
+
+        case ConsumptionFailureStrategy.Reject:
+            await this.nackMessages(originalChannel, batch, batchIndex, false, queueName);
+            break;
+
+        default:
+            throw this.processError(`Not supported failure strategy: ${this.options.failureStrategy}`);
+        }
+    }
+
+    private async nackMessages(
+        originalChannel: amqp.Channel,
+        batch: BatchRecord,
+        batchIndex: number,
+        requeue: boolean,
+        queueName: string,
+    ) {
+        if (batchIndex > 0) {
+            await Promise.all(batch.messages.map(msg =>
+                originalChannel.nack(msg.rabbitMessage, false, requeue),
+            ));
+        } else if (batchIndex === 0) {
+            const lastMessage = last(batch.messages);
+            if (!lastMessage)
+                throw this.processError('Internal error: Last message in batch not found during nack');
+            // keep await there in case API change in the future
+            await originalChannel.nack(lastMessage.rabbitMessage, true, requeue);
+        } else {
+            throw this.processError('Internal error: Negative batch index during nack');
+        }
+
+        debug('batch-acknowledged queue=%s reason=%s requeue=%s', queueName, 'nacked', requeue);
+        batch.state = BatchState.Acknowledged;
+    }
+
+    private async splitBatch(
+        originalChannel: amqp.Channel,
+        batch: BatchRecord,
+        consumerWrapper: BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        batchIndex: number,
+        callback: BatchConsumerCallbackFn<Message>,
+        queueName: string,
+    ) {
+        debug('batch-split queue=%s messages=%d', queueName, batch.messages.length);
+        const splitBatches: BatchRecord[] = batch.messages.map(message => ({
+            state: BatchState.WaitingForData,
+            messages: [message],
+        }));
+        consumerWrapper.batches.splice(batchIndex, 1, ...splitBatches);
+        await Promise.all(splitBatches.map(batch => this.handleBatch(
+            callback,
+            originalChannel,
+            batch,
+            consumerWrapper,
+            queueName,
+        )));
+    }
+
+    private removeProcessedBatches(
+        consumerWrapper: BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        queueName: string,
+    ) {
+        if (!consumerWrapper.isConnected || this.shouldAutoAck) {
+            consumerWrapper.batches
+                .filter(batch =>
+                    batch.state === BatchState.Processed || batch.state === BatchState.Acknowledging,
+                ).forEach(batch => {
+                    debug('batch-acknowledged queue=%s reason=%s', queueName, 'disconnected');
+                    batch.state = BatchState.Acknowledged;
+                });
+        }
+
+        const indicesOfBatchesToRemove = consumerWrapper.batches
+            .flatMap((b, i) => {
+                if (b.state === BatchState.Acknowledged)
+                    return [i];
+                return [];
+            });
+        if (indicesOfBatchesToRemove.length === 0)
+            return;
+
+        debug('acknowledged-cleanup queue=%s batches=%d', queueName, indicesOfBatchesToRemove.length);
+        for (const index of indicesOfBatchesToRemove.reverse()) {
+            const batch = consumerWrapper.batches[index];
+            if (!batch)
+                throw this.processError('Internal error: Batch for removal not found');
+            consumerWrapper.batches.splice(index, 1);
+            clearTimeout(batch.confirmTimer);
+            batch.confirmTimer = undefined;
+            consumerWrapper.messagesInFlight -= batch.messages.length;
+        }
+
+        debug('acknowledged-cleaned queue=%s batches=%d in-flight=%d', queueName, indicesOfBatchesToRemove.length, consumerWrapper.messagesInFlight);
+        this.notifyMessageProcessed?.();
+    }
+
+    private async planMessageAcknowledgment(
+        consumerWrapper: BatchConsumerWrapper<BatchConsumerCallbackFn<Message>>,
+        originalChannel: amqp.Channel,
+        queueName: string,
+    ) {
+        if (consumerWrapper.batches.length === 0)
+            return;
+
+        if (!consumerWrapper.isConnected || this.shouldAutoAck)
+            return;
+
+        // for first X batches we can use confirmation with "up to" semantic
+        const firstUnprocessedIndex = consumerWrapper.batches.findIndex(
+            ({ state }) =>
+                [BatchState.WaitingForData, BatchState.Processing, BatchState.Failed].includes(state),
+        );
+        const processedToIndex = firstUnprocessedIndex < 0 ? consumerWrapper.batches.length : firstUnprocessedIndex;
+        // batches only in states Processed, Acknowledging, and Acknowledged
+        const batchesToConfirm = consumerWrapper.batches.slice(0, processedToIndex);
+        batchesToConfirm.forEach(batch => {
+            clearTimeout(batch.confirmTimer);
+            batch.confirmTimer = undefined;
+        });
+
+        if (batchesToConfirm.length > 0 && last(batchesToConfirm)?.state === BatchState.Processed) {
+            debug('acknowledging-from-head queue=%s batches=%d', queueName, batchesToConfirm.length);
+            const lastConfirmBatch = last(batchesToConfirm);
+            if (!lastConfirmBatch)
+                throw this.processError('Internal Error: Last batch for confirmation not found');
+            const lastMessageOfLastConfirmBatch = last(lastConfirmBatch.messages);
+            if (!lastMessageOfLastConfirmBatch)
+                throw this.processError('Internal Error: Last batch or last message for confirmation not found');
+            batchesToConfirm.forEach(batch => {
+                if (batch.state === BatchState.Processed)
+                    batch.state = BatchState.Acknowledging;
+            });
+            // keep await there in case API change in the future
+            await originalChannel.ack(lastMessageOfLastConfirmBatch.rabbitMessage, true);
+            batchesToConfirm.forEach(batch => {
+                debug('batch-acknowledged queue=%s reason=%s', queueName, 'success');
+                batch.state = BatchState.Acknowledged;
+            });
+        }
+
+        // No bulk-ack possible (blocking batch before them): install confirmTimers for
+        // Processed batches that are waiting on an earlier unfinished batch.
+        consumerWrapper.batches
+            .filter(batch =>
+                batch.state === BatchState.Processed && !batch.confirmTimer,
+            )
+            .forEach(batch => {
+                batch.confirmTimer = setTimeout(async () => {
+                    if (!consumerWrapper.isConnected) {
+                        debug('batch-acknowledged queue=%s reason=%s', queueName, 'disconnect');
+                        batch.state = BatchState.Acknowledged;
+                    }
+                    if (batch.state !== BatchState.Processed)
+                        return;
+                    debug('acknowledging-out-of-order queue=%s', queueName);
+                    batch.state = BatchState.Acknowledging;
+                    await Promise.all(
+                        batch.messages.map(({ rabbitMessage }) =>
+                            originalChannel.ack(rabbitMessage, false),
+                        ),
+                    );
+                    debug('batch-acknowledged queue=%s reason=%s', queueName, 'success');
+                    batch.state = BatchState.Acknowledged;
+                    this.removeProcessedBatches(consumerWrapper, queueName);
+                }, this.maxWaitTimeForAck);
+            });
+    }
+}

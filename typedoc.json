@@ -1,0 +1,23 @@
+{
+  "entryPoints": [
+    "src/index.ts",
+    "src/extensions/zod/index.ts",
+    "src/extensions/jest/index.ts",
+    "src/extensions/vitest/index.ts"
+  ],
+  "entryPointStrategy": "expand",
+  "out": "doc/api",
+  "plugin": ["typedoc-plugin-markdown"],
+  "readme": "none",
+  "excludePrivate": true,
+  "excludeProtected": false,
+  "excludeInternal": true,
+  "excludeExternals": true,
+  "includeVersion": true,
+  "tsconfig": "tsconfig.json",
+  "outputFileStrategy": "members",
+  "entryFileName": "README",
+  "parametersFormat": "table",
+  "propertiesFormat": "table",
+  "enumMembersFormat": "table"
+}

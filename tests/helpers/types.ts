@@ -1,0 +1,100 @@
+type RateDetail = {
+    rate: number;
+};
+
+export type HTTPQueueDetail = {
+    consumer_details: unknown[];
+    arguments: Record<string, string>;
+    auto_delete: boolean;
+    consumer_capacity: number;
+    consumer_utilisation: number;
+    consumers: number;
+    deliveries: unknown[];
+    durable: boolean;
+    effective_policy_definition: Record<string, unknown>;
+    exclusive: boolean;
+    exclusive_consumer_tag: string | null;
+    garbage_collection: {
+        fullsweep_after: number;
+        max_heap_size: number;
+        min_bin_vheap_size: number;
+        min_heap_size: number;
+        minor_gcs: number;
+    };
+    head_message_timestamp: string | null;
+    idle_since: string;
+    incoming: unknown[];
+    internal: boolean;
+    internal_owner: boolean;
+    memory: number;
+    message_bytes: number;
+    message_bytes_persistent: number;
+    message_bytes_ram: number;
+    message_bytes_ready: number;
+    message_bytes_unacknowledged: number;
+    message_stats: {
+        ack: number;
+        deliver: number;
+        deliver_no_ack: number;
+        get: number;
+        get_empty: number;
+        get_no_ack: number;
+        get_publish: number;
+        redeliver: number;
+    };
+    messages: number;
+    messages_details: RateDetail;
+    messages_persistent: number;
+    messages_ram: number;
+    messages_ready: number;
+    messages_ready_details: RateDetail;
+    messages_ready_ram: number;
+    messages_unacknowledged: number;
+    messages_unacknowledged_details: RateDetail;
+    messages_unacknowledged_ram: number;
+    name: string;
+    node: string;
+    operator_policy: string | null;
+    policy: string | null;
+    reductions: number;
+    reductions_details: RateDetail;
+    single_active_consumer_tag: string | null;
+    state: string;
+    storage_version: number;
+    type: string;
+    vhost: string;
+};
+
+
+export type HTTPExchangeDetail = {
+    name: string;
+    type: string;
+    auto_delete: boolean;
+    durable: boolean;
+    internal: boolean;
+    arguments: object;
+    vhost: string;
+};
+
+export type HTTPBindingDetail = {
+    source: string;
+    vhost: string;
+    destination: string;
+    destination_type: string;
+    routing_key: string;
+    arguments: object;
+    properties_key: string;
+};
+
+export type HTTPQueueGet = {
+    payload_bytes: number;
+    redelivered: boolean;
+    exchange: string;
+    routing_key: string;
+    message_count: number;
+    properties: {
+        headers: object;
+    };
+    payload: string;
+    payload_encoding: string;
+};

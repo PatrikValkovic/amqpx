@@ -1,0 +1,9 @@
+.vscode
+node_modules
+dist
+.idea
+coverage
+doc_build
+doc/.vitepress/cache
+doc/api
+.claude

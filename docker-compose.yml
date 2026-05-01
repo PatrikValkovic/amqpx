@@ -1,0 +1,26 @@
+services:
+  rabbitmq:
+    image: rabbitmq:4.3-management
+    container_name: amqp-integ-rabbit
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 10s
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    container_name: amqp-integ-toxi
+    ports:
+      - "8474:8474"
+      - "25672:25672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
