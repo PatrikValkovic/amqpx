@@ -2,7 +2,7 @@ import { describe, expect, afterEach, vi } from 'vitest';
 import * as amqp from 'amqplib';
 import { ConnectionImplementation, ConnectionState } from '../../src';
 import { DIRECT_OPTIONS, PROXIED_OPTIONS } from '../helpers/broker-urls';
-import { RABBIT_CONTAINER, startContainer, stopContainer } from '../helpers/docker';
+import { RABBIT_CONTAINER, restartContainer, startContainer, stopContainer } from '../helpers/docker';
 import { withToxic } from '../helpers/toxiproxy';
 import { sleepPromise } from '../../src/utils';
 
@@ -122,11 +122,10 @@ describe('Connection integration', () => {
             await conn.connect();
             const reconnectedMock = vi.fn();
             conn.once('connected', reconnectedMock);
-            await stopContainer(RABBIT_CONTAINER);
-            await startContainer(RABBIT_CONTAINER);
+            await restartContainer(RABBIT_CONTAINER);
             await vi.waitFor(() => expect(reconnectedMock).toHaveBeenCalledTimes(1), { timeout: 60_000 });
             expect(conn.state()).toBe(ConnectionState.connected);
-        }, 120_000);
+        });
 
         it('close during reconnection stops retry loop', async () => {
             conn = new ConnectionImplementation(DIRECT_OPTIONS);
