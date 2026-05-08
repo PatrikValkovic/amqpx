@@ -182,7 +182,7 @@ export default defineConfig({
     },
 
     editLink: {
-      pattern: 'https://github.com/PatrikValkovic/amqpx/edit/main/doc/:path',
+      pattern: 'https://github.com/PatrikValkovic/amqpx/edit/master/doc/:path',
       text: 'Edit this page on GitHub',
     },
 

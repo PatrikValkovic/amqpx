@@ -50,6 +50,10 @@ export interface Queue {
      * Publishes via the default RabbitMQ exchange, routing messages directly to this queue by name.
      * By default, creates a new dedicated channel for the producer.
      * Pass a channel in `options` to use a specific one instead.
+     *
+     * @param options - Optional producer options (serialization, routing key, hooks, …).
+     *   Set `options.isConfirmed` to `true` to open the dedicated channel in confirm mode.
+     *   Has no effect when `options.channel` is supplied.
      */
     createProducer<T>(options?: ProducerOptions<T> & { isConfirmed?: boolean }): Promise<Producer<T>>;
 }
