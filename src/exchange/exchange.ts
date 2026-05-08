@@ -63,6 +63,10 @@ export interface Exchange {
      * Unless specified otherwise, uses the same channel as was used to declare the exchange.
      * This is generally not recommended, as each producer should have its own dedicated channel.
      * Consider using `connection.createProducerForExchange` instead.
+     *
+     * @param options - Optional producer options (serialization, routing key, hooks, …).
+     *   Set `options.isConfirmed` to `true` to open the dedicated channel in confirm mode.
+     *   Has no effect when `options.channel` is supplied.
      */
-    createProducer<T>(options?: ProducerOptions<T>& { isConfirmed?: boolean }): Promise<Producer<T>>;
+    createProducer<T>(options?: ProducerOptions<T> & { isConfirmed?: boolean }): Promise<Producer<T>>;
 }
