@@ -1,6 +1,6 @@
 {
   "name": "amqpx",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Wrapper around amqplib with connection retries, topology definition, batching, and validation",
   "homepage": "https://patrikvalkovic.github.io/amqpx/",
   "main": "dist/cjs/index.js",
