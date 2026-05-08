@@ -81,8 +81,20 @@ const native = await conn.native();
 native.emit('close');
 ```
 
+Different between case:
+- `startContainer`, `stopContainer`, `restartContainer` will keep defined topology.
+- use `destroyContainer` if test requires recreation of topology
+
+Always use `waitForHealthy` before performing any more actions.
+
 ## Error events
 
 If the code emits "error" event, warn user about it. Error event in JavaScript behave
 a bit differently than rest of the events and will throw exception if
-no handler is attached to it.
+no handler is attached to it. Never defensivelly add dummy listeners to the event.
+
+## Rules to follow
+
+- Never mock internal functionality of the library or 3rd parties
+- Use `sleepPromise` for waiting, never use fake timers
+- Wait 10s before asserting broker state (e.g. `queueDetail`)
