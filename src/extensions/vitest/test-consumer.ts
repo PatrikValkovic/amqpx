@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import type { Mock } from 'vitest';
 import type * as amqp from 'amqplib';
 import { Consumer, ConsumerCallbackFn } from '../../index';
 import { TestQueue } from './test-queue';
@@ -38,11 +39,11 @@ export class TestConsumer<T> extends EventEmitter implements Consumer<T> {
         this.setMaxListeners(0);
     }
 
-    close = vitest.fn().mockImplementation(() => Promise.resolve());
+    close: Mock = vitest.fn().mockImplementation(() => Promise.resolve());
 
-    listen = vitest.fn().mockImplementation(() => Promise.resolve(this));
+    listen: Mock = vitest.fn().mockImplementation(() => Promise.resolve(this));
 
-    setPrefetch = vitest.fn().mockImplementation(() => Promise.resolve());
+    setPrefetch: Mock = vitest.fn().mockImplementation(() => Promise.resolve());
 
     queue = new TestQueue();
 

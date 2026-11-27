@@ -24,7 +24,7 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
     constructor(
         private readonly options: amqp.Options.Connect,
         retryStrategy: RetryStrategy = {},
-        private readonly socketOptions?: unknown,
+        private readonly socketOptions?: amqp.SocketOptions,
     ) {
         super();
         this.retryStrategy = normalizeRetryStrategy({
