@@ -5,7 +5,7 @@ Multiple consumers compete for messages from a single queue. Each message is pro
 ## Code
 
 ```typescript
-import { connect, Connection, AssertionMode, ConsumptionFailureStrategy, Queue } from 'amqpx'
+import { connect, Connection, ConsumptionFailureStrategy, Queue } from 'amqpx'
 
 type Job = { jobId: string; payload: string }
 
@@ -32,8 +32,8 @@ async function doWork(job: Job): Promise<void> {
 // ---- Topology ----
 
 async function topology(connection: Connection) {
-  const channel = await connection.createChannel()
-  const queue = channel.createQueue('jobs', { durable: true })
+  const channel = connection.createChannel()
+  const queue = await channel.createQueue('jobs', { durable: true })
   return { queue }
 }
 
@@ -47,7 +47,9 @@ const connection = await connect({
 
 const { queue } = await topology(connection)
 
-const producer = await queue.createProducer<Job>()
+const producer = await queue.createProducer<Job>({
+  options: { persistent: true },  // survive a broker restart
+})
 
 // Start three competing workers
 const workers = await Promise.all([

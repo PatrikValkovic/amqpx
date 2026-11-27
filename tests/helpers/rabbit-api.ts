@@ -9,6 +9,7 @@ const SHARED_OPTS = {
     method: 'GET',
     headers: {
         Authorization: `Basic ${Buffer.from('guest:guest').toString('base64')}`,
+        'Content-Type': 'application/json',
     },
 };
 

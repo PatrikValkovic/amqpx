@@ -25,7 +25,7 @@ npm install amqpx
 ## Quick example
 
 ```typescript
-import { connect, AssertionMode } from 'amqpx'
+import { connect } from 'amqpx'
 
 type Order = { orderId: string; total: number }
 
@@ -36,7 +36,7 @@ const connection = await connect({
 })
 
 // Topology
-const channel = await connection.createChannel()
+const channel = connection.createChannel()
 const queue = await channel.createQueue('orders', { durable: true })
 
 // Produce
@@ -44,7 +44,7 @@ const producer = await queue.createProducer<Order>()
 await producer.publish({ orderId: 'abc-123', total: 49.99 })
 
 // Consume
-const consumer = await consumerQueue.createConsumer<Order>({ prefetch: 10 })
+const consumer = await queue.createConsumer<Order>({ prefetch: 10 })
 await consumer.listen(async ({ message }) => {
   console.log('order', message.orderId, 'total', message.total)
 })

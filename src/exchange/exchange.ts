@@ -24,7 +24,9 @@ export interface Exchange {
 
     /**
      * Bind a queue to this exchange.
-     * Asserts the exchange first if it has not been asserted yet.
+     * Asserts the queue and the exchange first if they have not been asserted yet.
+     * Equivalent to `queue.bindExchange(exchange, pattern, args)`.
+     * The binding is restored when the queue is asserted again after a reconnect.
      * @param queue - Queue to bind to this exchange.
      * @param pattern - Routing key pattern under which to bind.
      * @param args - Optional AMQP headers or x-arguments for the binding.
@@ -42,27 +44,26 @@ export interface Exchange {
 
     /**
      * Creates a consumer for the current exchange.
-     * Internally asserts an exclusive queue and binds it to the exchange.
-     * Unless specified otherwise, uses the same channel as was used to declare the exchange.
-     * This is generally not recommended, as each consumer should have its own dedicated channel.
-     * Consider using `connection.createConsumerForExchange` instead.
+     * The consumer reads from a temporary exclusive queue bound to the exchange under `options.pattern`
+     * and keeps receiving messages after a reconnect.
+     * By default, creates a new dedicated channel for the consumer.
+     * Pass a channel in `options` to use a specific one instead.
      */
     createConsumer<T>(options: ExchangeConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>>;
 
     /**
      * Creates a batch consumer for the current exchange.
-     * Internally asserts an exclusive queue and binds it to the exchange.
-     * Unless specified otherwise, uses the same channel as was used to declare the exchange.
-     * This is generally not recommended, as each consumer should have its own dedicated channel.
-     * Consider using `connection.createBatchConsumerForExchange` instead.
+     * The consumer reads from a temporary exclusive queue bound to the exchange under `options.pattern`
+     * and keeps receiving messages after a reconnect.
+     * By default, creates a new dedicated channel for the consumer.
+     * Pass a channel in `options` to use a specific one instead.
      */
     createBatchConsumer<T>(options: ExchangeBatchConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<BatchConsumer<T>>;
 
     /**
      * Creates a producer for the current exchange.
-     * Unless specified otherwise, uses the same channel as was used to declare the exchange.
-     * This is generally not recommended, as each producer should have its own dedicated channel.
-     * Consider using `connection.createProducerForExchange` instead.
+     * By default, creates a new dedicated channel for the producer.
+     * Pass a channel in `options` to use a specific one instead.
      *
      * @param options - Optional producer options (serialization, routing key, hooks, …).
      *   Set `options.isConfirmed` to `true` to open the dedicated channel in confirm mode.

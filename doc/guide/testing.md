@@ -97,7 +97,7 @@ const connection = new TestConnection()
 const channel = connection.createChannel()
 // connection.createChannel() returns a TestChannel
 
-const queue = channel.createQueue('orders')
+const queue = await channel.createQueue('orders')
 // queue is a TestQueue
 ```
 

@@ -106,7 +106,7 @@ await consumer.close(5_000)     // wait up to 5s
 
 ## Consuming from an exchange
 
-When you attach a consumer directly to an exchange, amqpx creates an exclusive temporary queue internally and binds it with the pattern you specify:
+When you attach a consumer directly to an exchange, amqpx creates an exclusive temporary queue internally and binds it with the pattern you specify. The queue gets a server-generated name, and the consumer gets its own dedicated channel. After a reconnect, the queue is re-declared under a new name and re-bound; messages published while the consumer was disconnected are not delivered to it:
 
 ```typescript
 const consumer = await exchange.createConsumer<Order>(

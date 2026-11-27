@@ -22,7 +22,7 @@ amqpx does not replace amqplib — it layers on top of it. Every entity in amqpx
 | `Producer.publish()` | `channel.publish()` / `channel.sendToQueue()` |
 | `Consumer.listen()` | `channel.consume()` |
 
-If you ever need to drop down to the amqplib level — for features not exposed by amqpx — every entity exposes a `.native()` method that returns the underlying amqplib object already initialized:
+If you ever need to drop down to the amqplib level — for features not exposed by amqpx — the connection and channel expose a `.native()` method that returns the underlying amqplib object already initialized:
 
 ```typescript
 const rawChannel = await channel.native() // amqp.Channel | amqp.ConfirmChannel

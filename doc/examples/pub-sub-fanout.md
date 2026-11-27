@@ -12,7 +12,7 @@ type Notification = { event: string; payload: unknown }
 // ---- Topology ----
 
 async function topology(connection: Connection) {
-  const channel = await connection.createChannel()
+  const channel = connection.createChannel()
   // No assert() needed — the predefined exchange already exists in RabbitMQ
   return { fanout: predefined.fanoutExchange(channel) }
 }

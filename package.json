@@ -1,6 +1,6 @@
 {
   "name": "amqpx",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Wrapper around amqplib with connection retries, topology definition, batching, and validation",
   "homepage": "https://patrikvalkovic.github.io/amqpx/",
   "main": "dist/cjs/index.js",
@@ -111,5 +111,10 @@
     "vitepress": "^1.6.4",
     "vitest": "^4.1.3",
     "zod": "^4.3.6"
+  },
+  "allowScripts": {
+    "fsevents@2.3.3": true,
+    "unrs-resolver@1.11.1": true,
+    "esbuild@0.21.5": true
   }
 }
