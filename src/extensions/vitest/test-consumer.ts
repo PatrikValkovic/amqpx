@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import type { Mock } from 'vitest';
 import type * as amqp from 'amqplib';
 import { Consumer, ConsumerCallbackFn } from '../../index';
+import { DeliverMessageOptions } from '../deliver-message-options';
 import { TestQueue } from './test-queue';
 import { TestChannel } from './test-channel';
 
@@ -53,7 +54,7 @@ export class TestConsumer<T> extends EventEmitter implements Consumer<T> {
      */
     async deliverMessage(
         message: T,
-        options: { serialize?(msg: T): Buffer } & Omit<Partial<amqp.ConsumeMessage>, 'content'> = {},
+        options: DeliverMessageOptions<T> = {},
     ): Promise<void> {
         const { calls } = this.listen.mock;
         const lastCall = calls.length > 0 ? calls[calls.length - 1] : undefined;

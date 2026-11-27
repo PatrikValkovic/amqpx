@@ -5,3 +5,4 @@ export * from './test-queue';
 export * from './test-consumer';
 export * from './test-batch-consumer';
 export * from './test-producer';
+export type { DeliverMessageOptions } from '../deliver-message-options';

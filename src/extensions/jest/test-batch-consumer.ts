@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import type * as amqp from 'amqplib';
 import { BatchConsumer } from '../../index';
 import { BatchConsumerCallbackFn } from '../../consumer';
+import { DeliverMessageOptions } from '../deliver-message-options';
 import { TestQueue } from './test-queue';
 import { TestChannel } from './test-channel';
 
@@ -55,7 +56,7 @@ export class TestBatchConsumer<T> extends EventEmitter implements BatchConsumer<
      */
     async deliverMessages(
         messages: T[],
-        options: { serialize?(msg: T): Buffer } & Omit<Partial<amqp.ConsumeMessage>, 'content'> = {},
+        options: DeliverMessageOptions<T> = {},
     ): Promise<void> {
         const { calls } = this.listen.mock;
         const lastCall = calls.length > 0 ? calls[calls.length - 1] : [];
