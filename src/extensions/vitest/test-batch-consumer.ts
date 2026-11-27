@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import type { Mock } from 'vitest';
 import type * as amqp from 'amqplib';
 import { BatchConsumer } from '../../index';
 import { BatchConsumerCallbackFn } from '../../consumer';
@@ -39,9 +40,9 @@ export class TestBatchConsumer<T> extends EventEmitter implements BatchConsumer<
         this.setMaxListeners(0);
     }
 
-    close = vitest.fn().mockImplementation(() => Promise.resolve());
+    close: Mock = vitest.fn().mockImplementation(() => Promise.resolve());
 
-    listen = vitest.fn().mockImplementation(() => Promise.resolve(this));
+    listen: Mock = vitest.fn().mockImplementation(() => Promise.resolve(this));
 
     queue = new TestQueue();
 

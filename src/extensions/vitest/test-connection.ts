@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import type { Mock } from 'vitest';
 import { Connection, ConnectionState } from '../../index';
 import { TestProducer } from './test-producer';
 import { TestChannel } from './test-channel';
@@ -25,39 +26,39 @@ import { TestBatchConsumer } from './test-batch-consumer';
  * ```
  */
 export class TestConnection extends EventEmitter implements Connection {
-    close = vitest.fn().mockImplementation(() => Promise.resolve());
+    close: Mock = vitest.fn().mockImplementation(() => Promise.resolve());
 
-    connect = vitest.fn().mockImplementation(() => Promise.resolve(this));
+    connect: Mock = vitest.fn().mockImplementation(() => Promise.resolve(this));
 
-    createChannel = vitest.fn().mockImplementation(() => new TestChannel(this));
+    createChannel: Mock = vitest.fn().mockImplementation(() => new TestChannel(this));
 
-    createConsumerForExchange = vitest.fn().mockImplementation(() => Promise.resolve(
+    createConsumerForExchange: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),
     ));
 
-    createConsumerForQueue = vitest.fn().mockImplementation(() => Promise.resolve(
+    createConsumerForQueue: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),
     ));
 
-    createBatchConsumerForQueue = vitest.fn().mockImplementation(() => Promise.resolve(
+    createBatchConsumerForQueue: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestBatchConsumer(),
     ));
 
-    createBatchConsumerForExchange = vitest.fn().mockImplementation(() => Promise.resolve(
+    createBatchConsumerForExchange: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestBatchConsumer(),
     ));
 
-    createProducerForExchange = vitest.fn().mockImplementation(() => Promise.resolve(
+    createProducerForExchange: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestProducer(),
     ));
 
-    createProducerForQueue = vitest.fn().mockImplementation(() => Promise.resolve(
+    createProducerForQueue: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestProducer(),
     ));
 
-    native = vitest.fn().mockResolvedValue(undefined);
+    native: Mock = vitest.fn().mockResolvedValue(undefined);
 
-    state = vitest.fn().mockReturnValue(ConnectionState.connected);
+    state: Mock = vitest.fn().mockReturnValue(ConnectionState.connected);
 
     /**
      * Simulates a server-side disconnect by emitting the `reconnecting` event.

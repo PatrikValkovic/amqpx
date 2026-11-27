@@ -1,6 +1,14 @@
 import { EventEmitter } from 'events';
+import type { Mock } from 'vitest';
 import { Channel, Connection } from '../../index';
 import { TestConsumer, TestBatchConsumer, TestExchange, TestProducer, TestQueue, TestConnection } from '.';
+
+type NativeChannelMock = Record<
+    'cancel' | 'prefetch' | 'consume' | 'ack' | 'nack' | 'assertQueue' | 'checkQueue'
+    | 'assertExchange' | 'checkExchange' | 'bindQueue' | 'bindExchange',
+    Mock
+>;
+
 /**
  * Mock implementation of Channel using vitest mocks.
  *
@@ -29,48 +37,48 @@ export class TestChannel extends EventEmitter implements Channel {
         super();
     }
 
-    connect = vitest.fn().mockImplementation(() => Promise.resolve(this));
+    connect: Mock = vitest.fn().mockImplementation(() => Promise.resolve(this));
 
-    close = vitest.fn().mockImplementation(() => Promise.resolve());
+    close: Mock = vitest.fn().mockImplementation(() => Promise.resolve());
 
-    createExchange = vitest.fn().mockImplementation(() => Promise.resolve(
+    createExchange: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestExchange(),
     ));
 
-    createQueue = vitest.fn().mockImplementation(() => Promise.resolve(
+    createQueue: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestQueue(),
     ));
 
-    createProducerForQueue = vitest.fn().mockImplementation(() => Promise.resolve(
+    createProducerForQueue: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestProducer(),
     ));
 
-    createProducerForExchange = vitest.fn().mockImplementation(() => Promise.resolve(
+    createProducerForExchange: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestProducer(),
     ));
 
-    createConsumerForQueue = vitest.fn().mockImplementation(() => Promise.resolve(
+    createConsumerForQueue: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),
     ));
 
-    createConsumerForExchange = vitest.fn().mockImplementation(() => Promise.resolve(
+    createConsumerForExchange: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),
     ));
 
-    createBatchConsumerForQueue = vitest.fn().mockImplementation(() => Promise.resolve(
+    createBatchConsumerForQueue: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestBatchConsumer(),
     ));
 
-    createBatchConsumerForExchange = vitest.fn().mockImplementation(() => Promise.resolve(
+    createBatchConsumerForExchange: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestBatchConsumer(),
     ));
 
-    native = vitest.fn().mockImplementation(() => Promise.resolve(this.nativeChannel));
+    native: Mock = vitest.fn().mockImplementation(() => Promise.resolve(this.nativeChannel));
 
     private _drainPending = false;
     private _drainResolvers: Array<() => void> = [];
 
-    publish = vitest.fn().mockImplementation((): Promise<boolean> => {
+    publish: Mock = vitest.fn().mockImplementation((): Promise<boolean> => {
         if (this._drainPending) {
             return new Promise<boolean>(resolve => {
                 this._drainResolvers.push(() => resolve(false));
@@ -79,7 +87,7 @@ export class TestChannel extends EventEmitter implements Channel {
         return Promise.resolve(false);
     });
 
-    checkQueue = vitest.fn().mockImplementation((queue: string) => Promise.resolve({
+    checkQueue: Mock = vitest.fn().mockImplementation((queue: string) => Promise.resolve({
         queue,
         messageCount: 0,
         consumerCount: 0,
@@ -114,7 +122,7 @@ export class TestChannel extends EventEmitter implements Channel {
         consumerTag: crypto.randomUUID(),
     };
 
-    nativeChannel = {
+    nativeChannel: NativeChannelMock = {
         cancel: vitest.fn().mockImplementation(() => Promise.resolve()),
         prefetch: vitest.fn().mockImplementation(() => Promise.resolve()),
         consume: vitest.fn().mockImplementation(() => Promise.resolve(this.consumeResponse)),

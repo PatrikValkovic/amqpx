@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import type { Mock } from 'vitest';
 import { Producer } from '../../index';
 import { TestChannel } from './test-channel';
 
@@ -29,9 +30,9 @@ export class TestProducer<T> extends EventEmitter implements Producer<T> {
         this.setMaxListeners(0);
     }
 
-    close = vitest.fn().mockResolvedValue(undefined);
+    close: Mock = vitest.fn().mockResolvedValue(undefined);
 
-    publish = vitest.fn().mockImplementation(msg => Promise.resolve(msg));
+    publish: Mock = vitest.fn().mockImplementation(msg => Promise.resolve(msg));
 
     channel = new TestChannel();
 

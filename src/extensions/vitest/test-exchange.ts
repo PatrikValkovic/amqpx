@@ -1,3 +1,4 @@
+import type { Mock } from 'vitest';
 import { Exchange } from '../../index';
 import { TestConsumer, TestBatchConsumer, TestProducer } from '.';
 
@@ -18,23 +19,23 @@ import { TestConsumer, TestBatchConsumer, TestProducer } from '.';
  * ```
  */
 export class TestExchange implements Exchange {
-    assert = vitest.fn().mockImplementation(() => Promise.resolve(this));
+    assert: Mock = vitest.fn().mockImplementation(() => Promise.resolve(this));
 
-    name = vitest.fn().mockImplementation(() => Promise.resolve('test-exchange'));
+    name: Mock = vitest.fn().mockImplementation(() => Promise.resolve('test-exchange'));
 
-    bindQueue = vitest.fn().mockImplementation(() => Promise.resolve(this));
+    bindQueue: Mock = vitest.fn().mockImplementation(() => Promise.resolve(this));
 
-    bindExchange = vitest.fn().mockImplementation(() => Promise.resolve(this));
+    bindExchange: Mock = vitest.fn().mockImplementation(() => Promise.resolve(this));
 
-    createConsumer = vitest.fn().mockImplementation(() => Promise.resolve(
+    createConsumer: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),
     ));
 
-    createBatchConsumer = vitest.fn().mockImplementation(() => Promise.resolve(
+    createBatchConsumer: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestBatchConsumer(),
     ));
 
-    createProducer = vitest.fn().mockImplementation(() => Promise.resolve(
+    createProducer: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestProducer(),
     ));
 }
