@@ -88,8 +88,8 @@ connection.on('error', (err) => console.error('connection error', err))
 Each producer or consumer should have a dedicated channel. Create one from a connection:
 
 ```typescript
-const channel = await connection.createChannel()          // regular channel
-const confirmedChannel = await connection.createChannel(true)  // confirm channel
+const channel = connection.createChannel()                // regular channel
+const confirmedChannel = connection.createChannel(true)  // confirm channel
 ```
 
 Use a **confirm channel** when you need delivery guarantees (publisher confirms). See [Publishing](/guide/publishing) for details.
@@ -101,7 +101,7 @@ Create and assert an exchange from a channel:
 ```typescript
 import { AssertionMode } from 'amqpx'
 
-const exchange = channel.createExchange('orders', 'topic', {
+const exchange = await channel.createExchange('orders', 'topic', {
   assertionMode: AssertionMode.Assert,  // default
   durable: true,
 })
@@ -138,7 +138,7 @@ const def     = predefined.defaultExchange(channel)  // '' (default exchange)
 ## Queues
 
 ```typescript
-const queue = channel.createQueue('order-events', {
+const queue = await channel.createQueue('order-events', {
   assertionMode: AssertionMode.Assert,
   durable: true,
 })
@@ -157,6 +157,8 @@ await exchange.bindQueue(queue, 'orders.#')
 await queue.bindExchange(exchange, 'orders.#')
 ```
 
+Both forms do the same thing: the queue performs the binding and remembers it. Whenever the queue is re-declared (for example after a reconnect, when a consumer starts listening again), it re-asserts the exchange if needed and restores the binding. Re-asserting only the exchange does not restore queue bindings.
+
 Or exchange-to-exchange binding:
 
 ```typescript
@@ -171,15 +173,14 @@ await exchange.bindQueue(queue, '', { 'x-match': 'all', region: 'eu' })
 
 ## Escape hatch — `.native()`
 
-If you need amqplib features not exposed by amqpx, every entity gives you direct access:
+If you need amqplib features not exposed by amqpx, the connection and channel give you direct access:
 
 ```typescript
 const rawChannel    = await channel.native()    // amqp.Channel | amqp.ConfirmChannel
 const rawConnection = await connection.native() // amqp.ChannelModel
-const rawQueue      = await queue.native()      // amqp.Replies.AssertQueue
 ```
 
-The returned values are already initialized and asserted.
+The returned values are already initialized.
 
 ## Topology definition
 
@@ -187,7 +188,7 @@ Typically, you want to have function in your code that will define the whole top
 
 ```typescript
 async function topology(connection: Connection) {
-    const channel = await connection.createChannel();
+    const channel = connection.createChannel();
 
     const exchange = await channel.createExchange('orders', 'topic', { durable: true });
 

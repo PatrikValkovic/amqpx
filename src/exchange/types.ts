@@ -1,7 +1,6 @@
 import * as amqp from 'amqplib';
 import { AssertionMode } from '../types';
 import { ConsumerOptions, BatchConsumerOptions } from '../consumer';
-import { Queue } from '../queue';
 import { Exchange } from './exchange';
 
 /**
@@ -36,22 +35,13 @@ export type ExchangeBatchConsumerOptions<T> = ExchangeConsumerBindingOptions & B
 
 export type BindingArgs = Record<string, string | number | boolean>;
 
-export enum BindingType {
-    queue= 'queue',
-    exchange = 'exchange',
-}
-
 type Pattern = string;
-export type Binding = {
+/** A binding of another exchange to this exchange. */
+export type ExchangeBinding = {
+    exchange: Exchange;
     pattern: Pattern;
     args?: BindingArgs;
-} & ({
-    type: BindingType.queue;
-    queue: Queue;
-} | {
-    type: BindingType.exchange;
-    exchange: Exchange;
-});
+};
 
 export type ExchangeOptions = amqp.Options.AssertExchange & {
     /**

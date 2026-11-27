@@ -163,7 +163,7 @@ describe('Queue integration', () => {
 
             const status = await rabbitApi.queueDetail(name);
             expect(status).toEqual({
-                error: 'Object Not Found',
+                error: 'not_found',
                 reason: 'Not Found',
             });
         });
@@ -185,7 +185,7 @@ describe('Queue integration', () => {
 
             const status = await rabbitApi.queueDetail(name);
             expect(status).toEqual({
-                error: 'Object Not Found',
+                error: 'not_found',
                 reason: 'Not Found',
             });
         });
@@ -245,7 +245,8 @@ describe('Queue integration', () => {
             await compose(['up', '-d']);
             await waitForHealthy(RABBIT_CONTAINER);
 
-            await exchange.assert();
+            // the queue owns its bindings: re-declaring it re-asserts the exchange and re-binds
+            await queue.assert();
             const restartBindings = await rabbitApi.exchangeBindings(exchangeName);
             expect(restartBindings).toContainEqual(expect.objectContaining({
                 destination: queueName,

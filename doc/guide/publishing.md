@@ -90,17 +90,17 @@ On a **confirm channel**, `publish()` waits for the broker to ACK or NACK the me
 
 ## Publisher confirms
 
-Pass `isConfirmed: true` as the second argument to `createProducer`, or create the producer from a confirmed channel:
+Pass `isConfirmed: true` in the `createProducer` options, or create the producer from a confirmed channel:
 
 ```typescript
 // pass isConfirmed flag
-const producer = await exchange.createProducer<Order>(
-  { retryStrategy: { maxRetries: 5 } },
-  true, // isConfirmed
-)
+const producer = await exchange.createProducer<Order>({
+  retryStrategy: { maxRetries: 5 },
+  isConfirmed: true,
+})
 
 // or create from a confirmed channel
-const confirmedChannel = await connection.createChannel(true)
+const confirmedChannel = connection.createChannel(true)
 const producer = await confirmedChannel.createProducerForExchange(exchange, {
   routingKey: 'orders.new',
 })
@@ -141,10 +141,10 @@ If the drain does not arrive within the timeout, a `DrainError` is thrown and th
 The producer emits events you can hook into for logging, metrics, or error handling:
 
 ```typescript
-producer.on('beforeSend', (message, routingKey) => {
+producer.on('beforeSend', (message, buffer) => {
   // called before each publish
 })
-producer.on('afterSend', (message, routingKey) => {
+producer.on('afterSend', (message, buffer) => {
   // called after successful publish
 })
 producer.on('republishFailed', (message, error) => {

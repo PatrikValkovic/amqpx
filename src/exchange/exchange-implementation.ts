@@ -5,7 +5,7 @@ import { Queue } from '../queue';
 import { ProducerOptions, Producer, ProducerImplementation } from '../producer';
 import { deepMerge, errToMessage, LIB_NAME } from '../utils';
 import { AssertionMode } from '../types';
-import { BindingArgs, Binding, BindingType, ExchangeConsumerQueueOptions, ExchangeConsumerOptions, ExchangeBatchConsumerOptions, ExchangeTypes, ExchangeOptions } from './types';
+import { BindingArgs, ExchangeBinding, ExchangeConsumerQueueOptions, ExchangeConsumerOptions, ExchangeBatchConsumerOptions, ExchangeTypes, ExchangeOptions } from './types';
 import { Exchange } from './exchange';
 
 const debug = debuglog(`${LIB_NAME}:exchange`);
@@ -17,7 +17,8 @@ const DEFAULT_EXCHANGE_OPTIONS = {
 export class ExchangeImplementation implements Exchange {
     private readonly options?: ExchangeOptions;
     private assertPromise: Promise<void> | null = null;
-    private bindings: Binding[] = [];
+    /** Exchange bindings, re-applied when the exchange is asserted again. */
+    private bindings: ExchangeBinding[] = [];
 
     constructor(
         protected readonly channel: Channel,
@@ -69,30 +70,8 @@ export class ExchangeImplementation implements Exchange {
     }
 
     async bindQueue(queue: Queue, pattern: string, args?: BindingArgs) {
-        const [thisName, queueName] = await Promise.all([
-            this.name(),
-            queue.name(),
-        ]);
-        debug('bind-queue exchange=%s queue=%s pattern=%s', thisName, queueName, pattern);
-
-        const doesBindingMatch = (binding: Binding) =>
-            binding.type === BindingType.queue &&
-            binding.pattern === pattern &&
-            binding.queue === queue &&
-            stableJsonStringify(binding.args) === stableJsonStringify(args);
-
-        if (this.bindings.every(binding => !doesBindingMatch(binding))) {
-            this.bindings.push({
-                args,
-                pattern,
-                type: BindingType.queue,
-                queue,
-            });
-        }
-
-        const channel = await this.channel.native();
-        await channel.bindQueue(queueName, thisName, pattern, args);
-        debug('bind-queue-done exchange=%s queue=%s pattern=%s', thisName, queueName, pattern);
+        debug('bind-queue exchange=%s pattern=%s', this.exchangeName, pattern);
+        await queue.bindExchange(this, pattern, args);
         return this;
     }
 
@@ -103,8 +82,7 @@ export class ExchangeImplementation implements Exchange {
         ]);
         debug('bind-exchange dest=%s source=%s pattern=%s', thisName, exchangeName, pattern);
 
-        const doesBindingMatch = (binding: Binding) =>
-            binding.type === BindingType.exchange &&
+        const doesBindingMatch = (binding: ExchangeBinding) =>
             binding.pattern === pattern &&
             binding.exchange === exchange &&
             stableJsonStringify(binding.args) === stableJsonStringify(args);
@@ -113,7 +91,6 @@ export class ExchangeImplementation implements Exchange {
             this.bindings.push({
                 args,
                 pattern,
-                type: BindingType.exchange,
                 exchange,
             });
         }
@@ -127,11 +104,7 @@ export class ExchangeImplementation implements Exchange {
     private async rebind() {
         debug('rebind name=%s bindings=%d', this.exchangeName, this.bindings.length);
         const promises = await Promise.allSettled(
-            this.bindings.map(
-                binding => (binding.type === BindingType.queue
-                    ? this.bindQueue(binding.queue, binding.pattern, binding.args)
-                    : this.bindExchange(binding.exchange, binding.pattern, binding.args)),
-            ),
+            this.bindings.map(binding => this.bindExchange(binding.exchange, binding.pattern, binding.args)),
         );
 
         const failedPromise = promises.find(p => p.status === 'rejected');
@@ -148,7 +121,7 @@ export class ExchangeImplementation implements Exchange {
             durable: false,
             exclusive: true,
         });
-        await this.bindQueue(queue, options.pattern, options.bindingArgs);
+        await queue.bindExchange(this, options.pattern, options.bindingArgs);
         return queue.createConsumer(options);
     }
 
@@ -158,7 +131,7 @@ export class ExchangeImplementation implements Exchange {
             durable: false,
             exclusive: true,
         });
-        await this.bindQueue(queue, options.pattern, options.bindingArgs);
+        await queue.bindExchange(this, options.pattern, options.bindingArgs);
         return queue.createBatchConsumer(options);
     }
 

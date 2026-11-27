@@ -1,28 +1,36 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     AssertionMode,
+    BatchConsumer,
     Channel,
     ConnectionImplementation,
+    Consumer,
     predefined,
 } from '../../src';
 import { DIRECT_OPTIONS } from '../helpers/broker-urls';
-import { compose, destroyContainer, RABBIT_CONTAINER, waitForHealthy } from '../helpers/docker';
+import { compose, destroyContainer, RABBIT_CONTAINER, restartContainer, waitForHealthy } from '../helpers/docker';
 import { uniqueName } from '../helpers/names';
 import * as rabbitApi from '../helpers/rabbit-api';
 import { sleepPromise } from '../../src/utils';
 
 const PROPAGATION_DELAY = 10_000;
 
+type TestMessage = { value: number };
+
 describe('Exchange integration', () => {
     let connection: ConnectionImplementation;
     let channel: Channel;
+    let consumers: Array<Consumer<TestMessage> | BatchConsumer<TestMessage>>;
 
     beforeEach(() => {
         connection = new ConnectionImplementation(DIRECT_OPTIONS);
         channel = connection.createChannel();
+        consumers = [];
     });
 
     afterEach(async () => {
+        for (const consumer of consumers)
+            await consumer.close();
         await connection?.close();
     });
 
@@ -174,37 +182,184 @@ describe('Exchange integration', () => {
     });
 
     describe('predefined exchanges', () => {
-        it('should assert predefined amqp.direct exchange', async () => {
-            const exchange = predefined.directExchange(channel);
-            await expect(exchange.assert()).resolves.toBeDefined();
+        it.each([
+            ['directExchange', 'amq.direct', 'direct', predefined.directExchange],
+            ['fanoutExchange', 'amq.fanout', 'fanout', predefined.fanoutExchange],
+            ['headersExchange', 'amq.headers', 'headers', predefined.headersExchange],
+            ['matchExchange', 'amq.match', 'headers', predefined.matchExchange],
+            ['topicExchange', 'amq.topic', 'topic', predefined.topicExchange],
+        ] as const)('should resolve %s to the broker built-in %s exchange of type %s', async (_fn, expectedName, expectedType, factory) => {
+            const exchange = factory(channel);
+            await expect(exchange.assert()).resolves.toBe(exchange);
+            expect(await exchange.name()).toBe(expectedName);
+
+            const detail = await rabbitApi.exchangeDetail(expectedName);
+            expect(detail).toEqual(expect.objectContaining({
+                name: expectedName,
+                type: expectedType,
+                durable: true,
+            }));
         });
 
-        it('should assert predefined amqp.fanout exchange', async () => {
-            const exchange = predefined.fanoutExchange(channel);
-            await expect(exchange.assert()).resolves.toBeDefined();
-        });
-
-        it('should assert predefined amqp.topic exchange', async () => {
-            const exchange = predefined.topicExchange(channel);
-            await expect(exchange.assert()).resolves.toBeDefined();
-        });
-
-        it('should assert predefined amqp.headers exchange', async () => {
-            const exchange = predefined.headersExchange(channel);
-            await expect(exchange.assert()).resolves.toBeDefined();
-        });
-
-        it('should route a message through the predefined amqp.direct exchange', async () => {
+        it('should route a message through the predefined amq.direct exchange', async () => {
             const queueName = uniqueName('q-predefined-direct');
             const exchange = predefined.directExchange(channel);
             const queue = await channel.createQueue(queueName, { durable: true, autoDelete: false });
             await exchange.bindQueue(queue, queueName);
 
-            await rabbitApi.publish(JSON.stringify({ value: 1 }), queueName, 'amqp.direct');
+            const result = await rabbitApi.publish(JSON.stringify({ value: 1 }), queueName, 'amq.direct');
+            expect(result.routed).toBe(true);
             await sleepPromise(PROPAGATION_DELAY);
             expect((await rabbitApi.queueDetail(queueName)).messages).toBe(1);
 
             await rabbitApi.queueDelete(queueName);
+        });
+    });
+
+    describe('createConsumer', () => {
+        it('should receive a published message on a dedicated consumer channel', async () => {
+            const exchangeName = uniqueName('ex-consumer');
+            const exchange = await channel.createExchange(exchangeName, 'direct', { durable: false, autoDelete: true });
+            const consumer = await exchange.createConsumer<TestMessage>({ pattern: 'my-key' });
+            consumers.push(consumer);
+            expect(consumer.channel).not.toBe(channel);
+
+            const handler = vi.fn();
+            await consumer.listen(({ message }) => handler(message));
+            expect(await consumer.queue.name()).toMatch(/^amq\.gen-/);
+
+            await rabbitApi.publish(JSON.stringify({ value: 1 }), 'my-key', exchangeName);
+            await vi.waitFor(() => expect(handler).toHaveBeenCalledWith({ value: 1 }), { timeout: 10_000 });
+            expect(handler).toHaveBeenCalledTimes(1);
+        });
+
+        it('should give each consumer its own queue and deliver to both via fanout', async () => {
+            const exchangeName = uniqueName('ex-consumer-fanout');
+            const exchange = await channel.createExchange(exchangeName, 'fanout', { durable: false, autoDelete: true });
+            const consumer1 = await exchange.createConsumer<TestMessage>({ pattern: '' });
+            consumers.push(consumer1);
+            const consumer2 = await exchange.createConsumer<TestMessage>({ pattern: '' });
+            consumers.push(consumer2);
+
+            const handler1 = vi.fn();
+            const handler2 = vi.fn();
+            await consumer1.listen(({ message }) => handler1(message));
+            await consumer2.listen(({ message }) => handler2(message));
+
+            const [queueName1, queueName2] = await Promise.all([consumer1.queue.name(), consumer2.queue.name()]);
+            expect(queueName1).toMatch(/^amq\.gen-/);
+            expect(queueName2).toMatch(/^amq\.gen-/);
+            expect(queueName1).not.toBe(queueName2);
+
+            await rabbitApi.publish(JSON.stringify({ value: 7 }), '', exchangeName);
+            await vi.waitFor(() => {
+                expect(handler1).toHaveBeenCalledWith({ value: 7 });
+                expect(handler2).toHaveBeenCalledWith({ value: 7 });
+            }, { timeout: 10_000 });
+            expect(handler1).toHaveBeenCalledTimes(1);
+            expect(handler2).toHaveBeenCalledTimes(1);
+        });
+
+        it('should keep receiving after broker restart with a re-declared and re-bound queue', async () => {
+            const exchangeName = uniqueName('ex-consumer-restart');
+            const exchange = await channel.createExchange(exchangeName, 'fanout', { durable: true, autoDelete: false });
+            const consumer = await exchange.createConsumer<TestMessage>({ pattern: '' });
+            consumers.push(consumer);
+
+            const handler = vi.fn();
+            await consumer.listen(({ message }) => handler(message));
+            const queueNameBefore = await consumer.queue.name();
+
+            await rabbitApi.publish(JSON.stringify({ value: 1 }), '', exchangeName);
+            await vi.waitFor(() => expect(handler).toHaveBeenCalledWith({ value: 1 }), { timeout: 10_000 });
+
+            await restartContainer(RABBIT_CONTAINER);
+            await waitForHealthy(RABBIT_CONTAINER);
+
+            // wait until the consumer re-declared its exclusive queue and re-bound it to the exchange
+            await vi.waitFor(async () => {
+                const bindings = await rabbitApi.exchangeBindings(exchangeName);
+                expect(bindings).toContainEqual(expect.objectContaining({ destination_type: 'queue' }));
+            }, { timeout: 30_000, interval: 500 });
+
+            const queueNameAfter = await consumer.queue.name();
+            expect(queueNameAfter).toMatch(/^amq\.gen-/);
+            expect(queueNameAfter).not.toBe(queueNameBefore);
+
+            await rabbitApi.publish(JSON.stringify({ value: 2 }), '', exchangeName);
+            await vi.waitFor(() => expect(handler).toHaveBeenCalledWith({ value: 2 }), { timeout: 10_000 });
+            expect(handler).toHaveBeenCalledTimes(2);
+
+            await sleepPromise(PROPAGATION_DELAY);
+            const bindings = await rabbitApi.exchangeBindings(exchangeName);
+            expect(bindings).toEqual([expect.objectContaining({
+                destination: queueNameAfter,
+                destination_type: 'queue',
+                routing_key: '',
+            })]);
+        }, 120_000);
+    });
+
+    describe('createBatchConsumer', () => {
+        it('should receive a published message on a dedicated consumer channel', async () => {
+            const exchangeName = uniqueName('ex-batch-consumer');
+            const exchange = await channel.createExchange(exchangeName, 'direct', { durable: false, autoDelete: true });
+            const consumer = await exchange.createBatchConsumer<TestMessage>({
+                pattern: 'my-key',
+                batchSize: 2,
+                maxWaitTimeForBatch: 500,
+            });
+            consumers.push(consumer);
+            expect(consumer.channel).not.toBe(channel);
+
+            const handler = vi.fn();
+            await consumer.listen(({ messages }) => handler(messages.map(m => m.message)));
+            expect(await consumer.queue.name()).toMatch(/^amq\.gen-/);
+
+            await rabbitApi.publish(JSON.stringify({ value: 1 }), 'my-key', exchangeName);
+            await rabbitApi.publish(JSON.stringify({ value: 2 }), 'my-key', exchangeName);
+            await vi.waitFor(() => expect(handler.mock.calls.flatMap(([messages]) => messages)).toEqual([
+                { value: 1 },
+                { value: 2 },
+            ]), { timeout: 10_000 });
+        });
+    });
+
+    describe('connection.createConsumerForExchange', () => {
+        it('should receive a published message on a dedicated consumer channel', async () => {
+            const exchangeName = uniqueName('ex-conn-consumer');
+            const exchange = await channel.createExchange(exchangeName, 'topic', { durable: false, autoDelete: true });
+            const consumer = await connection.createConsumerForExchange<TestMessage>(exchange, { pattern: 'orders.*' });
+            consumers.push(consumer);
+            expect(consumer.channel).not.toBe(channel);
+
+            const handler = vi.fn();
+            await consumer.listen(({ message }) => handler(message));
+            expect(await consumer.queue.name()).toMatch(/^amq\.gen-/);
+
+            await rabbitApi.publish(JSON.stringify({ value: 3 }), 'orders.created', exchangeName);
+            await vi.waitFor(() => expect(handler).toHaveBeenCalledWith({ value: 3 }), { timeout: 10_000 });
+            expect(handler).toHaveBeenCalledTimes(1);
+        });
+
+        it('should receive a published message with a batch consumer', async () => {
+            const exchangeName = uniqueName('ex-conn-batch-consumer');
+            const exchange = await channel.createExchange(exchangeName, 'topic', { durable: false, autoDelete: true });
+            const consumer = await connection.createBatchConsumerForExchange<TestMessage>(exchange, {
+                pattern: 'orders.*',
+                batchSize: 1,
+                maxWaitTimeForBatch: 500,
+            });
+            consumers.push(consumer);
+            expect(consumer.channel).not.toBe(channel);
+
+            const handler = vi.fn();
+            await consumer.listen(({ messages }) => handler(messages.map(m => m.message)));
+            expect(await consumer.queue.name()).toMatch(/^amq\.gen-/);
+
+            await rabbitApi.publish(JSON.stringify({ value: 4 }), 'orders.created', exchangeName);
+            await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([{ value: 4 }]), { timeout: 10_000 });
+            expect(handler).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -235,7 +390,9 @@ describe('Exchange integration', () => {
             await compose(['up', '-d']);
             await waitForHealthy(RABBIT_CONTAINER);
 
-            await exchange.assert();
+            // queues own their bindings: re-declaring them re-asserts the exchange and re-binds
+            await queue1.assert();
+            await queue2.assert();
             const restartBindings = await rabbitApi.exchangeBindings(exchangeName);
             expect(restartBindings).toContainEqual(expect.objectContaining({
                 destination: q1,
@@ -275,7 +432,9 @@ describe('Exchange integration', () => {
             await compose(['up', '-d']);
             await waitForHealthy(RABBIT_CONTAINER);
 
-            await exchange.assert();
+            // queues own their bindings: re-declaring them re-asserts the exchange and re-binds
+            await queue1.assert();
+            await queue2.assert();
             const restartBindings = await rabbitApi.exchangeBindings(exchangeName);
             expect(restartBindings).toContainEqual(expect.objectContaining({
                 destination: q1,
@@ -325,7 +484,9 @@ describe('Exchange integration', () => {
             await compose(['up', '-d']);
             await waitForHealthy(RABBIT_CONTAINER);
 
-            await exchange.assert();
+            // queues own their bindings: re-declaring them re-asserts the exchange and re-binds
+            await queue1.assert();
+            await queue2.assert();
             const restartBindings = await rabbitApi.exchangeBindings(exchangeName);
             expect(restartBindings).toContainEqual(expect.objectContaining({
                 destination: q1,
@@ -379,7 +540,8 @@ describe('Exchange integration', () => {
             await compose(['up', '-d']);
             await waitForHealthy(RABBIT_CONTAINER);
 
-            await exchange.assert();
+            // the queue owns its bindings: re-declaring it re-asserts the exchange and re-binds
+            await queue.assert();
             const restartBindings = await rabbitApi.exchangeBindings(exchangeName);
             expect(restartBindings).toContainEqual(expect.objectContaining({
                 destination: queueName,

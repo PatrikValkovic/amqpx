@@ -24,7 +24,9 @@ export interface Queue {
 
     /**
      * Bind this queue to an exchange.
-     * Asserts the queue first if it has not been asserted yet.
+     * Asserts the queue and the exchange first if they have not been asserted yet.
+     * Equivalent to `exchange.bindQueue(queue, pattern, args)`.
+     * The binding is restored when the queue is asserted again after a reconnect.
      * @param exchange - Exchange to bind this queue to.
      * @param pattern - Routing key pattern under which to bind.
      * @param args - Optional AMQP headers or x-arguments for the binding.
