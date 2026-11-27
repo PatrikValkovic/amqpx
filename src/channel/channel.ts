@@ -33,6 +33,13 @@ export interface ChannelEventMap {
     drain: [];
 }
 
+/**
+ * An AMQP channel on a {@link Connection}.
+ *
+ * Not needed for everyday use: declare exchanges and queues with `connection.createExchange` /
+ * `connection.createQueue`, and producers and consumers created from them get their own channels.
+ * Use a channel when you need direct control over which channel an entity uses.
+ */
 export interface Channel extends EventEmitter<ChannelEventMap> {
 
     /**

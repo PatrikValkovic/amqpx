@@ -55,8 +55,6 @@ const consumer = await queue.createConsumer<Order>({
 const consumer = await queue.createConsumer<Order>({ prefetch: 5 })
 ```
 
-> **Warning:** prefetch is set at the channel level. Use a dedicated channel per consumer (which is the default) so different consumers do not share the same prefetch counter or influence each other.
-
 ## Custom deserialization
 
 Messages are parsed with `JSON.parse` by default. Override it to handle other formats:
@@ -106,7 +104,7 @@ await consumer.close(5_000)     // wait up to 5s
 
 ## Consuming from an exchange
 
-When you attach a consumer directly to an exchange, amqpx creates an exclusive temporary queue internally and binds it with the pattern you specify. The queue gets a server-generated name, and the consumer gets its own dedicated channel. After a reconnect, the queue is re-declared under a new name and re-bound; messages published while the consumer was disconnected are not delivered to it:
+When you attach a consumer directly to an exchange, amqpx creates an exclusive temporary queue internally and binds it with the pattern you specify. The queue gets a server-generated name. After a reconnect, the queue is re-declared under a new name and re-bound; messages published while the consumer was disconnected are not delivered to it:
 
 ```typescript
 const consumer = await exchange.createConsumer<Order>(
@@ -125,7 +123,7 @@ const consumer = await exchange.createConsumer<Order>(
 
 ## Other creation paths
 
-The connection exposes shortcut methods that create a dedicated channel automatically:
+The connection exposes equivalent shortcut methods:
 
 ```typescript
 const consumer = await connection.createConsumerForQueue(queue, { prefetch: 5 })
@@ -140,4 +138,16 @@ const consumer = await connection.createConsumerForExchange(exchange, { pattern:
 | `parseMessageFn` | `(buf: Buffer) => T \| Promise<T>` | `JSON.parse` | Deserialize the message |
 | `consumeOptions` | `Omit<amqp.Options.Consume, 'noAck'>` | `{}` | amqplib consume options |
 | `prefetch` | `number` | `0` (unlimited) | Max unacked messages from broker |
-| `channel` | `Channel \| null` | `null` (new channel) | Existing channel to reuse |
+
+## Advanced: using your own channel
+
+Every consumer gets its own channel by default. To use an existing channel instead, pass it in the `channel` option:
+
+```typescript
+const channel = connection.createChannel()
+const consumer = await queue.createConsumer<Order>({ channel, prefetch: 5 })
+```
+
+> **Warning:** prefetch is configured on the channel. Consumers that share a channel also share the prefetch limit and influence each other.
+
+See [Direct channel access](/guide/topology#direct-channel-access) for when this is useful.

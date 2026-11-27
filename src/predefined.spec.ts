@@ -1,5 +1,5 @@
-import { TestChannel } from './extensions/vitest';
-import { ExchangeImplementation } from './exchange';
+import { TestChannel, TestConnection, TestExchange } from './extensions/vitest';
+import { ExchangeImplementation, ExchangeOptions, ExchangeTypes } from './exchange';
 import { QueueImplementation } from './queue';
 import { DefaultExchange } from './exchange/default-exchange';
 import { AssertionMode } from './types';
@@ -7,9 +7,11 @@ import * as predefined from './predefined';
 
 describe('predefined', () => {
     let channel: TestChannel;
+    let connection: TestConnection;
 
     beforeEach(() => {
         channel = new TestChannel();
+        connection = new TestConnection();
     });
 
     describe.each([
@@ -56,6 +58,25 @@ describe('predefined', () => {
             expect(channel.nativeChannel.bindQueue).toHaveBeenCalledWith('test-queue', expectedName, 'routing.key', { type: 'a' });
             expect(channel.nativeChannel.assertExchange).not.toHaveBeenCalled();
         });
+
+        describe('with connection', () => {
+            it(`should create ${expectedName} on the connection as a durable passive ${expectedType} exchange when given a connection`, async () => {
+                const exchange = factory(connection);
+
+                expect(exchange).toBeInstanceOf(Promise);
+                expect(await exchange).toBeInstanceOf(TestExchange);
+                expect(connection.createExchange).toHaveBeenCalledWith(expectedName, expectedType, {
+                    durable: true,
+                    assertionMode: AssertionMode.Passive,
+                });
+            });
+
+            it('should not create a channel when given a connection', async () => {
+                await factory(connection);
+
+                expect(connection.createChannel).not.toHaveBeenCalled();
+            });
+        });
     });
 
     describe('defaultExchange', () => {
@@ -65,6 +86,27 @@ describe('predefined', () => {
             expect(exchange).toBeInstanceOf(DefaultExchange);
             expect(await exchange.name()).toBe('');
             expect(channel.nativeChannel.assertExchange).not.toHaveBeenCalled();
+        });
+
+        it('should create the passive default exchange on the connection when given a connection', async () => {
+            const exchange = await predefined.defaultExchange(connection);
+
+            expect(exchange).toBeInstanceOf(TestExchange);
+            expect(connection.createExchange).toHaveBeenCalledWith('', 'direct', {
+                durable: true,
+                assertionMode: AssertionMode.Passive,
+            });
+        });
+
+        it('should resolve an exchange with an empty name without declaring it when given a connection', async () => {
+            connection.createExchange.mockImplementation((name: string, type: ExchangeTypes, options: ExchangeOptions) =>
+                new ExchangeImplementation(channel, name, type, options).assert());
+
+            const exchange = await predefined.defaultExchange(connection);
+
+            expect(await exchange.name()).toBe('');
+            expect(channel.nativeChannel.assertExchange).not.toHaveBeenCalled();
+            expect(channel.nativeChannel.checkExchange).not.toHaveBeenCalled();
         });
     });
 });

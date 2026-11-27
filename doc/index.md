@@ -19,7 +19,7 @@ features:
   - title: Automatic reconnect
     details: Pluggable retry strategies handle transient broker failures so your service recovers without manual intervention.
   - title: Composable layers
-    details: Connection → Channel → Exchange / Queue → Producer / Consumer. Each layer exposes factory methods for the one below.
+    details: Connection → Exchange / Queue → Producer / Consumer. Each layer exposes factory methods for the one below.
   - title: Failure strategies
     details: Per-consumer error handling — drop, requeue, or reject — without tangling application logic with transport concerns.
   - title: Batch consuming

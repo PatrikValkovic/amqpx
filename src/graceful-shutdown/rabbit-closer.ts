@@ -31,7 +31,7 @@ export class RabbitCloser {
      * Waits for each stage to complete before proceeding to the next.
      * Follows sequence: producers → consumers → channels → connections.
      * @param timeout - Total budget in milliseconds for the entire shutdown sequence.
-     *   When omitted, each stage waits indefinitely.
+     *   Defaults to 60 000 ms.
      */
     async close(timeout = 60_000): Promise<void> {
         const start = performance.now();

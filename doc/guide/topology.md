@@ -4,14 +4,15 @@ Topology refers to the shape of your RabbitMQ setup: exchanges, queues, and the 
 
 ```
 Connection
-  └── Channel
-        ├── Exchange
-        │     ├── Producer
-        │     └── Consumer (creates a temporary exclusive queue internally)
-        └── Queue
-              ├── Producer
-              └── Consumer
+  ├── Exchange
+  │     ├── Producer
+  │     └── Consumer (creates a temporary exclusive queue internally)
+  └── Queue
+        ├── Producer
+        └── Consumer
 ```
+
+Every producer and consumer gets its own dedicated channel automatically, so you never have to manage channels in the typical workflow. For the rare cases where you need one, see [Direct channel access](#direct-channel-access).
 
 ## Connection
 
@@ -83,25 +84,14 @@ connection.on('close', () => console.log('connection closed'))
 connection.on('error', (err) => console.error('connection error', err))
 ```
 
-## Channel
-
-Each producer or consumer should have a dedicated channel. Create one from a connection:
-
-```typescript
-const channel = connection.createChannel()                // regular channel
-const confirmedChannel = connection.createChannel(true)  // confirm channel
-```
-
-Use a **confirm channel** when you need delivery guarantees (publisher confirms). See [Publishing](/guide/publishing) for details.
-
 ## Exchanges
 
-Create and assert an exchange from a channel:
+Create and assert an exchange from the connection:
 
 ```typescript
 import { AssertionMode } from 'amqpx'
 
-const exchange = await channel.createExchange('orders', 'topic', {
+const exchange = await connection.createExchange('orders', 'topic', {
   assertionMode: AssertionMode.Assert,  // default
   durable: true,
 })
@@ -122,23 +112,23 @@ You can pass any [amqplib](https://amqp-node.github.io/amqplib/channel_api.html#
 
 ### Predefined exchanges
 
-Amqpx ships factory functions for RabbitMQ's built-in exchange types. They use `AssertionMode.Passive` so no assertion is attempted — they reference the exchange that RabbitMQ has running by default:
+Amqpx ships factory functions for RabbitMQ's built-in exchange types. They use `AssertionMode.Passive` so no assertion is attempted — they reference the exchange that RabbitMQ has running by default. Pass the connection and await the result:
 
 ```typescript
 import { predefined } from 'amqpx'
 
-const direct  = predefined.directExchange(channel)   // amq.direct
-const fanout  = predefined.fanoutExchange(channel)   // amq.fanout
-const topic   = predefined.topicExchange(channel)    // amq.topic
-const headers = predefined.headersExchange(channel)  // amq.headers
-const match   = predefined.matchExchange(channel)    // amq.match
-const def     = predefined.defaultExchange(channel)  // '' (default exchange)
+const direct  = await predefined.directExchange(connection)   // amq.direct
+const fanout  = await predefined.fanoutExchange(connection)   // amq.fanout
+const topic   = await predefined.topicExchange(connection)    // amq.topic
+const headers = await predefined.headersExchange(connection)  // amq.headers
+const match   = await predefined.matchExchange(connection)    // amq.match
+const def     = await predefined.defaultExchange(connection)  // '' (default exchange)
 ```
 
 ## Queues
 
 ```typescript
-const queue = await channel.createQueue('order-events', {
+const queue = await connection.createQueue('order-events', {
   assertionMode: AssertionMode.Assert,
   durable: true,
 })
@@ -146,6 +136,12 @@ await queue.assert()
 ```
 
 Same `AssertionMode` semantics as exchanges.
+
+To inspect a queue without creating it, use `connection.checkQueue`. It resolves with the queue metadata (`queue`, `messageCount`, `consumerCount`) and rejects if the queue does not exist:
+
+```typescript
+const { messageCount, consumerCount } = await connection.checkQueue('order-events')
+```
 
 ## Bindings
 
@@ -171,29 +167,16 @@ For headers exchanges, pass binding arguments as a third parameter:
 await exchange.bindQueue(queue, '', { 'x-match': 'all', region: 'eu' })
 ```
 
-## Escape hatch — `.native()`
-
-If you need amqplib features not exposed by amqpx, the connection and channel give you direct access:
-
-```typescript
-const rawChannel    = await channel.native()    // amqp.Channel | amqp.ConfirmChannel
-const rawConnection = await connection.native() // amqp.ChannelModel
-```
-
-The returned values are already initialized.
-
 ## Topology definition
 
 Typically, you want to have function in your code that will define the whole topology in one place and then attach your producers and consumers.
 
 ```typescript
 async function topology(connection: Connection) {
-    const channel = connection.createChannel();
+    const exchange = await connection.createExchange('orders', 'topic', { durable: true });
 
-    const exchange = await channel.createExchange('orders', 'topic', { durable: true });
-
-    const priorityDlq = await channel.createQueue('priority-orders-dlq', { durable: true });
-    const priorityOrders = await channel.createQueue('priority-orders', {
+    const priorityDlq = await connection.createQueue('priority-orders-dlq', { durable: true });
+    const priorityOrders = await connection.createQueue('priority-orders', {
         durable: true,
         arguments: {
             'x-dead-letter-exchange': '',
@@ -201,8 +184,8 @@ async function topology(connection: Connection) {
         },
     });
 
-    const ordersDlq = await channel.createQueue('orders-dlq', { durable: true });
-    const orders = await channel.createQueue('orders', {
+    const ordersDlq = await connection.createQueue('orders-dlq', { durable: true });
+    const orders = await connection.createQueue('orders', {
         durable: true,
         arguments: {
             'x-dead-letter-exchange': '',
@@ -223,4 +206,49 @@ async function topology(connection: Connection) {
         orders,
     };
 }
+```
+
+## Escape hatch — `.native()`
+
+If you need amqplib features not exposed by amqpx, the connection gives you the underlying amqplib object, already initialized:
+
+```typescript
+const rawConnection = await connection.native() // amqp.ChannelModel
+```
+
+Channels expose the same method; see [Direct channel access](#direct-channel-access).
+
+## Direct channel access
+
+You do not need channels in the typical workflow: exchanges and queues are created from the connection, and every producer and consumer opens its own dedicated channel. Create a channel yourself only when you need direct control over it, for example to:
+
+- open a confirm channel by hand instead of passing `isConfirmed: true` to a producer,
+- share one channel between several producers or consumers through their `channel` option,
+- call amqplib directly with `channel.native()`.
+
+Create a channel from the connection; pass `true` for a confirm channel:
+
+```typescript
+const channel = connection.createChannel()                // regular channel
+const confirmedChannel = connection.createChannel(true)  // confirm channel
+```
+
+A channel offers the same factory methods as the connection (`createExchange`, `createQueue`, `checkQueue`, `createProducerForQueue`, `createConsumerForQueue`, …), but producers and consumers created from it share that channel instead of getting their own. Keep in mind that prefetch is configured per channel, so consumers sharing a channel also share their prefetch limit.
+
+The predefined exchanges accept a channel too; in that case they return the exchange synchronously:
+
+```typescript
+const fanout = predefined.fanoutExchange(channel)
+```
+
+To pass an existing channel to a single producer or consumer, use the `channel` option:
+
+```typescript
+const consumer = await queue.createConsumer<Order>({ channel })
+```
+
+`channel.native()` returns the underlying amqplib channel, already open:
+
+```typescript
+const rawChannel = await channel.native() // amqp.Channel | amqp.ConfirmChannel
 ```

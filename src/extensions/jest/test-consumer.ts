@@ -21,10 +21,6 @@ import { TestChannel } from './test-channel';
  *
  * const consumer = new TestConsumer();
  *
- * const channel = consumer.getChannel();
- *
- * expect(channel).toBeInstanceOf(TestChannel);
- *
  * const listener = () => { / * empty * / };
  * await consumer.listen(listener);
  *

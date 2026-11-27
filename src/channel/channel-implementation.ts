@@ -16,6 +16,10 @@ import { ChannelWrapper, ChannelPublishOptions } from './types';
 
 const debug = debuglog(`${LIB_NAME}:channel`);
 
+/**
+ * Default {@link Channel} implementation. Prefer creating exchanges, queues, producers and consumers
+ * from a {@link Connection}; use a channel only when you need control over which channel an entity uses.
+ */
 export class ChannelImplementation extends EventEmitter<ChannelEventMap> implements Channel {
     private readonly wrapper: ChannelWrapper;
     private closeHandler: Promise<void> | null = null;

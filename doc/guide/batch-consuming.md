@@ -107,13 +107,13 @@ const consumer = await queue.createBatchConsumer<Event>({
 
 ## Other creation paths
 
-Batch consumers can also be created from an exchange directly, or via connection-level shortcuts that handle channel creation automatically:
+Batch consumers can also be created from an exchange directly, or via connection-level shortcuts:
 
 ```typescript
 // from exchange directly — amqpx creates a temporary exclusive queue internally
 const consumer = await exchange.createBatchConsumer<Event>({ pattern: 'events.*', batchSize: 20 })
 
-// connection-level shortcut — creates a dedicated channel automatically
+// connection-level shortcuts
 const consumer = await connection.createBatchConsumerForQueue(queue, { batchSize: 50 })
 const consumer = await connection.createBatchConsumerForExchange(exchange, { pattern: 'events.#', batchSize: 50 })
 ```

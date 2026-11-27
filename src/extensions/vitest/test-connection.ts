@@ -5,6 +5,8 @@ import { TestProducer } from './test-producer';
 import { TestChannel } from './test-channel';
 import { TestConsumer } from './test-consumer';
 import { TestBatchConsumer } from './test-batch-consumer';
+import { TestExchange } from './test-exchange';
+import { TestQueue } from './test-queue';
 
 /**
  * Mock implementation of Connection using vitest mocks.
@@ -16,13 +18,14 @@ import { TestBatchConsumer } from './test-batch-consumer';
  *
  * @example
  * ```ts
- * import { TestConnection } from 'amqpx/vitest';
+ * import { TestConnection, TestQueue } from 'amqpx/vitest';
  *
  * const connection = new TestConnection();
  *
- * const channel = connection.createChannel();
+ * const queue = await connection.createQueue('orders');
  *
- * expect(channel).toBeInstanceOf(TestChannel);
+ * expect(queue).toBeInstanceOf(TestQueue);
+ * expect(connection.createQueue).toHaveBeenCalledWith('orders');
  * ```
  */
 export class TestConnection extends EventEmitter implements Connection {
@@ -31,6 +34,20 @@ export class TestConnection extends EventEmitter implements Connection {
     connect: Mock = vitest.fn().mockImplementation(() => Promise.resolve(this));
 
     createChannel: Mock = vitest.fn().mockImplementation(() => new TestChannel(this));
+
+    createExchange: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
+        new TestExchange(),
+    ));
+
+    createQueue: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
+        new TestQueue(),
+    ));
+
+    checkQueue: Mock = vitest.fn().mockImplementation((queue: string) => Promise.resolve({
+        queue,
+        messageCount: 0,
+        consumerCount: 0,
+    }));
 
     createConsumerForExchange: Mock = vitest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),

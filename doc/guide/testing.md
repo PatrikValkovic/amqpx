@@ -84,22 +84,24 @@ expect(producer.getPublishedMessages()).toEqual([
 
 `getPublishedMessages()` extracts the first argument from each `publish.mock.calls` — equivalent to `producer.publish.mock.calls.map(([msg]) => msg)`.
 
-## TestConnection, TestChannel, TestQueue, TestExchange
+## TestConnection, TestQueue, TestExchange
 
 These are full mock implementations of the corresponding interfaces. Factory methods return the appropriate test doubles:
 
 ```typescript
-import { TestConnection, TestChannel, TestQueue } from 'amqpx/vitest'
+import { TestConnection } from 'amqpx/vitest'
 
 const connection = new TestConnection()
 // connection.state() returns ConnectionState.connected immediately
 
-const channel = connection.createChannel()
-// connection.createChannel() returns a TestChannel
-
-const queue = await channel.createQueue('orders')
+const queue = await connection.createQueue('orders')
 // queue is a TestQueue
+
+const exchange = await connection.createExchange('order-events', 'topic')
+// exchange is a TestExchange
 ```
+
+`TestChannel` mocks the `Channel` interface for code that uses [direct channel access](/guide/topology#direct-channel-access); `connection.createChannel()` returns one.
 
 ## Testing code that uses ZodValidatedConsumer
 

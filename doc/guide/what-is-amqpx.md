@@ -16,18 +16,19 @@ amqpx does not replace amqplib — it layers on top of it. Every entity in amqpx
 | amqpx | amqplib equivalent |
 |---|---|
 | `ConnectionImplementation` | `amqp.connect()` result (`ChannelModel`) |
-| `Channel` | `connection.createChannel()` result |
 | `Exchange.assert()` | `channel.assertExchange()` |
 | `Queue.assert()` | `channel.assertQueue()` |
 | `Producer.publish()` | `channel.publish()` / `channel.sendToQueue()` |
 | `Consumer.listen()` | `channel.consume()` |
+| `Channel` | `connection.createChannel()` result |
 
-If you ever need to drop down to the amqplib level — for features not exposed by amqpx — the connection and channel expose a `.native()` method that returns the underlying amqplib object already initialized:
+amqpx manages channels for you: every producer and consumer gets its own. If you ever need to drop down to the amqplib level — for features not exposed by amqpx — the connection exposes a `.native()` method that returns the underlying amqplib object already initialized:
 
 ```typescript
-const rawChannel = await channel.native() // amqp.Channel | amqp.ConfirmChannel
 const rawConnection = await connection.native() // amqp.ChannelModel
 ```
+
+Channels can also be created and accessed directly; see [Direct channel access](/guide/topology#direct-channel-access).
 
 ## Installation
 
@@ -39,7 +40,7 @@ amqpx ships four entry points:
 
 | Import path | Contents |
 |---|---|
-| `amqpx` | Core entities (Connection, Channel, Exchange, Queue, Producer, Consumer, BatchConsumer) |
+| `amqpx` | Core entities (Connection, Exchange, Queue, Producer, Consumer, BatchConsumer, Channel) |
 | `amqpx/zod` | `ZodValidatedConsumer` and `ZodValidatedBatchConsumer` |
 | `amqpx/jest` | Test doubles for Jest |
 | `amqpx/vitest` | Test doubles for Vitest |

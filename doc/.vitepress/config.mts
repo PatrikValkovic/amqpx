@@ -63,13 +63,13 @@ export default defineConfig({
           collapsed: false,
           items: [
             { text: 'Connection', link: '/api/index/interfaces/Connection' },
-            { text: 'Channel', link: '/api/index/interfaces/Channel' },
             { text: 'Exchange', link: '/api/index/interfaces/Exchange' },
             { text: 'Queue', link: '/api/index/interfaces/Queue' },
             { text: 'Producer', link: '/api/index/interfaces/Producer' },
             { text: 'Consumer', link: '/api/index/interfaces/Consumer' },
             { text: 'BatchConsumer', link: '/api/index/interfaces/BatchConsumer' },
             { text: 'RetryStrategy', link: '/api/index/interfaces/RetryStrategy' },
+            { text: 'Channel', link: '/api/index/interfaces/Channel' },
           ],
         },
         {
@@ -77,7 +77,6 @@ export default defineConfig({
           collapsed: true,
           items: [
             { text: 'ConnectionImplementation', link: '/api/index/classes/ConnectionImplementation' },
-            { text: 'ChannelImplementation', link: '/api/index/classes/ChannelImplementation' },
             { text: 'ExchangeImplementation', link: '/api/index/classes/ExchangeImplementation' },
             { text: 'QueueImplementation', link: '/api/index/classes/QueueImplementation' },
             { text: 'ProducerImplementation', link: '/api/index/classes/ProducerImplementation' },
@@ -86,6 +85,7 @@ export default defineConfig({
             { text: 'RabbitCloser', link: '/api/index/classes/RabbitCloser' },
             { text: 'TooManyRetriesError', link: '/api/index/classes/TooManyRetriesError' },
             { text: 'DrainError', link: '/api/index/classes/DrainError' },
+            { text: 'ChannelImplementation', link: '/api/index/classes/ChannelImplementation' },
           ],
         },
         {
@@ -157,12 +157,12 @@ export default defineConfig({
           collapsed: true,
           items: [
             { text: 'TestConnection', link: '/api/extensions/jest/classes/TestConnection' },
-            { text: 'TestChannel', link: '/api/extensions/jest/classes/TestChannel' },
             { text: 'TestExchange', link: '/api/extensions/jest/classes/TestExchange' },
             { text: 'TestQueue', link: '/api/extensions/jest/classes/TestQueue' },
             { text: 'TestProducer', link: '/api/extensions/jest/classes/TestProducer' },
             { text: 'TestConsumer', link: '/api/extensions/jest/classes/TestConsumer' },
             { text: 'TestBatchConsumer', link: '/api/extensions/jest/classes/TestBatchConsumer' },
+            { text: 'TestChannel', link: '/api/extensions/jest/classes/TestChannel' },
           ],
         },
         {
@@ -170,12 +170,12 @@ export default defineConfig({
           collapsed: true,
           items: [
             { text: 'TestConnection', link: '/api/extensions/vitest/classes/TestConnection' },
-            { text: 'TestChannel', link: '/api/extensions/vitest/classes/TestChannel' },
             { text: 'TestExchange', link: '/api/extensions/vitest/classes/TestExchange' },
             { text: 'TestQueue', link: '/api/extensions/vitest/classes/TestQueue' },
             { text: 'TestProducer', link: '/api/extensions/vitest/classes/TestProducer' },
             { text: 'TestConsumer', link: '/api/extensions/vitest/classes/TestConsumer' },
             { text: 'TestBatchConsumer', link: '/api/extensions/vitest/classes/TestBatchConsumer' },
+            { text: 'TestChannel', link: '/api/extensions/vitest/classes/TestChannel' },
           ],
         },
       ],

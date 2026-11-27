@@ -13,7 +13,7 @@ import { TestConsumer, TestBatchConsumer, TestProducer } from '.';
  * import { TestExchange } from 'amqpx/vitest';
  *
  * const exchange = new TestExchange();
- * // or create from TestChannel or TestConnection
+ * // or create from TestConnection
  *
  * expect(exchange.bindQueue).toBeCalledTimes(0);
  * ```

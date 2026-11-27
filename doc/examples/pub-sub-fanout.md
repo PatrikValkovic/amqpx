@@ -12,9 +12,8 @@ type Notification = { event: string; payload: unknown }
 // ---- Topology ----
 
 async function topology(connection: Connection) {
-  const channel = connection.createChannel()
   // No assert() needed — the predefined exchange already exists in RabbitMQ
-  return { fanout: predefined.fanoutExchange(channel) }
+  return { fanout: await predefined.fanoutExchange(connection) }
 }
 
 // ---- Setup ----
@@ -34,7 +33,7 @@ const producer = await fanout.createProducer<Notification>()
 
 // ---- Subscribers ----
 
-// Each subscriber gets its own channel and an exclusive queue that is
+// Each subscriber gets its own exclusive queue that is
 // automatically bound to the fanout exchange by amqpx.
 const consumer1 = await fanout.createConsumer<Notification>({
   pattern: '',  // fanout ignores the pattern, but it is required by the API
@@ -59,6 +58,6 @@ await producer.publish({ event: 'user.signed_up', payload: { userId: 42 } })
 
 ## Key points
 
-- `predefined.fanoutExchange()` references the built-in `amq.fanout` exchange. No assertion is needed.
+- `predefined.fanoutExchange(connection)` references the built-in `amq.fanout` exchange. No assertion is needed.
 - Each `exchange.createConsumer()` call creates a dedicated exclusive queue internally. When the consumer closes, the queue is deleted automatically.
 - All subscribers receive all published messages — there is no routing.

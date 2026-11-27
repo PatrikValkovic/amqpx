@@ -8,7 +8,7 @@ Full API reference generated from source TypeDoc comments.
 
 | Page | Contents |
 |---|---|
-| [amqpx (core)](/api/index/README) | Connection, Channel, Exchange, Queue, Producer, Consumer, BatchConsumer, RabbitCloser, all enums and types |
+| [amqpx (core)](/api/index/README) | Connection, Exchange, Queue, Producer, Consumer, BatchConsumer, RabbitCloser, Channel, all enums and types |
 | [predefined](/api/index/namespaces/predefined/README) | Built-in exchange factory functions (`directExchange`, `fanoutExchange`, `topicExchange`, …) |
 | [retryStrategies](/api/index/namespaces/retryStrategies/README) | Backoff strategy functions (`exponentialBackoff`, `cappedExponentialBackoff`, …) |
 

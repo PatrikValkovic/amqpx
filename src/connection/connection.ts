@@ -1,9 +1,17 @@
 import { EventEmitter } from 'events';
 import * as amqp from 'amqplib';
+import { Replies } from 'amqplib';
 import { Channel } from '../channel';
-import { Queue } from '../queue';
+import { Queue, QueueOptions } from '../queue';
 import { ProducerOptions, Producer } from '../producer';
-import { Exchange, ExchangeConsumerQueueOptions, ExchangeConsumerOptions, ExchangeBatchConsumerOptions } from '../exchange';
+import {
+    Exchange,
+    ExchangeConsumerQueueOptions,
+    ExchangeConsumerOptions,
+    ExchangeBatchConsumerOptions,
+    ExchangeOptions,
+    ExchangeTypes,
+} from '../exchange';
 import { ConsumerOptions, Consumer, BatchConsumerOptions, BatchConsumer } from '../consumer';
 
 /**
@@ -96,9 +104,33 @@ export interface Connection extends EventEmitter<ConnectionEventMap> {
 
     /**
      * Creates a new channel on this connection.
+     * Not needed for everyday use: declare exchanges and queues on the connection and
+     * producers and consumers get their own channels.
      * @param isConfirmed - If true, creates a confirm channel (publisher confirms enabled).
      */
     createChannel(isConfirmed?: boolean): Channel;
+
+    /**
+     * Asserts an exchange on the broker and returns an {@link Exchange} handle.
+     * Producers and consumers created from it get their own dedicated channels.
+     * @param name - Exchange name.
+     * @param type - Exchange type (direct, fanout, topic, headers, …).
+     * @param options - Optional exchange options, including `assertionMode`.
+     */
+    createExchange(name: string, type: ExchangeTypes, options?: ExchangeOptions): Promise<Exchange>;
+    /**
+     * Asserts a queue on the broker and returns a {@link Queue} handle.
+     * Producers and consumers created from it get their own dedicated channels.
+     * @param name - Queue name. Pass an empty string to let the broker generate one.
+     * @param options - Optional queue options, including `assertionMode`.
+     */
+    createQueue(name: string, options?: QueueOptions): Promise<Queue>;
+    /**
+     * Checks whether a queue exists on the broker without asserting it.
+     * Resolves with the queue metadata; rejects if the queue does not exist.
+     * @param name - Queue name to inspect.
+     */
+    checkQueue(name: string): Promise<Replies.AssertQueue>;
 
     /**
      * Creates a producer for a queue and opens a dedicated channel for it.

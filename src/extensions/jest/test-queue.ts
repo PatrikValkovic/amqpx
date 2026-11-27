@@ -14,7 +14,7 @@ import { TestProducer } from './test-producer';
  * import { TestQueue } from 'amqpx/jest';
  *
  * const queue = new TestQueue();
- * // or create from TestChannel, TestConnection, or TestExchange
+ * // or create from TestConnection
  *
  * expect(queue.bindExchange).toBeCalledTimes(0);
  * ```

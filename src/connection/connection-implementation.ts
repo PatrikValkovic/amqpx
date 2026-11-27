@@ -1,12 +1,20 @@
 import { debuglog } from 'util';
 import { EventEmitter } from 'events';
 import * as amqp from 'amqplib';
+import { Replies } from 'amqplib';
 import { DEFAULT_RETRY_STRATEGY, normalizeRetryStrategy, retryLoop, RetryStrategy } from '../retry';
 import { TimeStrategy } from '../retry/time-strategies';
 import { Channel, ChannelImplementation } from '../channel';
-import { Exchange, ExchangeConsumerQueueOptions, ExchangeConsumerOptions, ExchangeBatchConsumerOptions } from '../exchange';
+import {
+    Exchange,
+    ExchangeConsumerQueueOptions,
+    ExchangeConsumerOptions,
+    ExchangeBatchConsumerOptions,
+    ExchangeOptions,
+    ExchangeTypes,
+} from '../exchange';
 import { Consumer, ConsumerOptions, BatchConsumer, BatchConsumerOptions } from '../consumer';
-import { Queue } from '../queue';
+import { Queue, QueueOptions } from '../queue';
 import { ProducerOptions, Producer } from '../producer';
 import { TooManyRetriesError } from '../errors';
 import { errToMessage, LIB_NAME, maskAmqpUrl, sleepPromise } from '../utils';
@@ -20,6 +28,8 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
     private connection: Promise<amqp.ChannelModel | null> | null = null;
     private closingHandler: Promise<void> | null = null;
     private connectionState: ConnectionState = ConnectionState.preconnect;
+    /** Channel for declaring exchanges, queues and bindings; opened on first use. */
+    private readonly topologyChannel: ChannelImplementation;
 
     constructor(
         private readonly options: amqp.Options.Connect,
@@ -30,6 +40,12 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
         this.retryStrategy = normalizeRetryStrategy({
             ...DEFAULT_RETRY_STRATEGY,
             ...retryStrategy,
+        });
+        this.topologyChannel = new ChannelImplementation(this, false);
+        // every exchange and queue declared through it listens for its `close` event
+        this.topologyChannel.setMaxListeners(0);
+        this.topologyChannel.on('error', err => {
+            debug('topology-channel-error error=%s', errToMessage(err));
         });
     }
 
@@ -107,10 +123,16 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
             this.connectionState = ConnectionState.closing;
             const connection = await this.connection?.catch(() => { /* ignore */ });
             try {
+                const start = performance.now();
+                // a failing channel must not keep the connection open
+                await this.topologyChannel.close(timeout).catch(err => {
+                    debug('topology-channel-close-error error=%s', errToMessage(err));
+                });
+                const remaining = Math.max(0, timeout - (performance.now() - start));
                 const abort = new AbortController();
                 await Promise.race([
                     Promise.resolve(connection?.close()).then(() => abort.abort()),
-                    sleepPromise(timeout).then(() => {
+                    sleepPromise(remaining).then(() => {
                         if (!abort.signal.aborted)
                             throw new Error('Connection close timed out');
                     }),
@@ -143,6 +165,18 @@ export class ConnectionImplementation extends EventEmitter<ConnectionEventMap> i
 
     createChannel(isConfirmed = false): Channel {
         return new ChannelImplementation(this, isConfirmed);
+    }
+
+    createExchange(name: string, type: ExchangeTypes, options?: ExchangeOptions): Promise<Exchange> {
+        return this.topologyChannel.createExchange(name, type, options);
+    }
+
+    createQueue(name: string, options?: QueueOptions): Promise<Queue> {
+        return this.topologyChannel.createQueue(name, options);
+    }
+
+    checkQueue(name: string): Promise<Replies.AssertQueue> {
+        return this.topologyChannel.checkQueue(name);
     }
 
     createConsumerForExchange<T>(exchange: Exchange, options: ExchangeConsumerOptions<T>, queueOptions?: ExchangeConsumerQueueOptions): Promise<Consumer<T>> {

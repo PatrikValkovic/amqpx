@@ -4,6 +4,8 @@ import { TestProducer } from './test-producer';
 import { TestChannel } from './test-channel';
 import { TestConsumer } from './test-consumer';
 import { TestBatchConsumer } from './test-batch-consumer';
+import { TestExchange } from './test-exchange';
+import { TestQueue } from './test-queue';
 
 /**
  * Mock implementation of Connection using jest mocks.
@@ -15,13 +17,14 @@ import { TestBatchConsumer } from './test-batch-consumer';
  *
  * @example
  * ```ts
- * import { TestConnection } from 'amqpx/jest';
+ * import { TestConnection, TestQueue } from 'amqpx/jest';
  *
  * const connection = new TestConnection();
  *
- * const channel = connection.createChannel();
+ * const queue = await connection.createQueue('orders');
  *
- * expect(channel).toBeInstanceOf(TestChannel);
+ * expect(queue).toBeInstanceOf(TestQueue);
+ * expect(connection.createQueue).toHaveBeenCalledWith('orders');
  * ```
  */
 export class TestConnection extends EventEmitter implements Connection {
@@ -30,6 +33,20 @@ export class TestConnection extends EventEmitter implements Connection {
     connect = jest.fn().mockImplementation(() => Promise.resolve(this));
 
     createChannel = jest.fn().mockImplementation(() => new TestChannel(this));
+
+    createExchange = jest.fn().mockImplementation(() => Promise.resolve(
+        new TestExchange(),
+    ));
+
+    createQueue = jest.fn().mockImplementation(() => Promise.resolve(
+        new TestQueue(),
+    ));
+
+    checkQueue = jest.fn().mockImplementation((queue: string) => Promise.resolve({
+        queue,
+        messageCount: 0,
+        consumerCount: 0,
+    }));
 
     createConsumerForExchange = jest.fn().mockImplementation(() => Promise.resolve(
         new TestConsumer(),

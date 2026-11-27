@@ -4,7 +4,7 @@ Type-safe RabbitMQ messaging for TypeScript, built on top of [amqplib](https://w
 
 - **Generic producers and consumers** — define message shapes once, TypeScript enforces them everywhere
 - **Automatic reconnect** — pluggable retry strategies handle broker failures transparently
-- **Composable topology** — Connection → Channel → Exchange / Queue → Producer / Consumer
+- **Composable topology** — Connection → Exchange / Queue → Producer / Consumer
 - **Failure strategies** — drop, requeue, or reject on handler errors, per consumer
 - **Batch consuming** — built-in batching with configurable size, timeouts, and ack coalescing
 - **Extensions** — optional Zod validation and in-memory test doubles for Vitest/Jest
@@ -36,8 +36,7 @@ const connection = await connect({
 })
 
 // Topology
-const channel = connection.createChannel()
-const queue = await channel.createQueue('orders', { durable: true })
+const queue = await connection.createQueue('orders', { durable: true })
 
 // Produce
 const producer = await queue.createProducer<Order>()

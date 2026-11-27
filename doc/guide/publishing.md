@@ -82,27 +82,20 @@ await producer.publish(
 )
 ```
 
-## Standard channel vs publisher confirms
+## Delivery guarantees and confirm mode
 
-On a **standard channel**, `publish()` is fire-and-forget — it returns as soon as the message is handed to the TCP buffer, without waiting for broker acknowledgement. There is no delivery guarantee.
+By default, `publish()` is fire-and-forget — it returns as soon as the message is handed to the TCP buffer, without waiting for broker acknowledgement. There is no delivery guarantee.
 
-On a **confirm channel**, `publish()` waits for the broker to ACK or NACK the message. On NACK (meaning one or more queues are full), amqpx retries automatically using `retryStrategy`. This gives you exactly-once delivery semantics at the cost of latency.
+In **confirm mode**, `publish()` waits for the broker to ACK or NACK the message. On NACK (meaning one or more queues are full), amqpx retries automatically using `retryStrategy`. This gives you exactly-once delivery semantics at the cost of latency.
 
 ## Publisher confirms
 
-Pass `isConfirmed: true` in the `createProducer` options, or create the producer from a confirmed channel:
+Pass `isConfirmed: true` in the `createProducer` options to create the producer in confirm mode:
 
 ```typescript
-// pass isConfirmed flag
 const producer = await exchange.createProducer<Order>({
   retryStrategy: { maxRetries: 5 },
   isConfirmed: true,
-})
-
-// or create from a confirmed channel
-const confirmedChannel = connection.createChannel(true)
-const producer = await confirmedChannel.createProducerForExchange(exchange, {
-  routingKey: 'orders.new',
 })
 ```
 
@@ -116,7 +109,7 @@ await producer.publish(order, undefined, {
 
 ### Error window
 
-On a **standard channel**, the broker never tells the producer whether a message was delivered. The `errorWindow` option (default 5000 ms) compensates: if the channel errors within that window after a publish, amqpx treats messages sent in that window as potentially lost and republishes them. This provides at-least-once delivery within the error window.
+Without confirm mode, the broker never tells the producer whether a message was delivered. The `errorWindow` option (default 5000 ms) compensates: if the channel errors within that window after a publish, amqpx treats messages sent in that window as potentially lost and republishes them. This provides at-least-once delivery within the error window.
 
 Set to `0` to opt out (effectivelly turning publisher into at-most-once delivery semantic):
 
@@ -124,7 +117,7 @@ Set to `0` to opt out (effectivelly turning publisher into at-most-once delivery
 const producer = await exchange.createProducer<Order>({ errorWindow: 0 })
 ```
 
-Note that `errorWindow` does not apply to confirm-channel producers — delivery is already tracked explicitly via broker ACK/NACK.
+Note that `errorWindow` does not apply to producers in confirm mode — delivery is already tracked explicitly via broker ACK/NACK.
 
 ## Backpressure
 
@@ -170,7 +163,7 @@ Beyond `exchange.createProducer()`, producers can also be created directly from 
 // publish directly to a queue via the default exchange
 const producer = await queue.createProducer<Order>()
 
-// connection-level shortcut — creates a dedicated channel automatically
+// connection-level shortcut
 const producer = await connection.createProducerForQueue(queue)
 const producer = await connection.createProducerForExchange(exchange)
 ```
@@ -182,7 +175,20 @@ const producer = await connection.createProducerForExchange(exchange)
 | `stringifyMessage` | `(msg: T) => Buffer \| Promise<Buffer>` | `JSON.stringify` | Serialize the message |
 | `routingKey` | `string \| (msg: T) => string` | `''` | Routing key |
 | `options` | `amqp.Options.Publish` | `{}` | amqplib publish options |
-| `channel` | `Channel \| null` | `null` | Existing channel to reuse |
 | `drainTimeout` | `number` | `30000` | ms to wait for drain before throwing |
 | `errorWindow` | `number` | `5000` | ms window for at-least-once retries |
 | `retryStrategy` | `RetryStrategy` | exponential, 10 retries | Retry for confirmed publishes |
+
+## Advanced: using your own channel
+
+Every producer gets its own channel by default. To control the channel yourself — for example to share one confirm channel between several producers — pass it in the `channel` option. The producer then uses that channel as it is, and `isConfirmed` has no effect:
+
+```typescript
+const confirmedChannel = connection.createChannel(true)
+const producer = await exchange.createProducer<Order>({
+  routingKey: 'orders.new',
+  channel: confirmedChannel,
+})
+```
+
+See [Direct channel access](/guide/topology#direct-channel-access) for when this is useful.

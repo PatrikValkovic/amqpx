@@ -32,8 +32,7 @@ async function doWork(job: Job): Promise<void> {
 // ---- Topology ----
 
 async function topology(connection: Connection) {
-  const channel = connection.createChannel()
-  const queue = await channel.createQueue('jobs', { durable: true })
+  const queue = await connection.createQueue('jobs', { durable: true })
   return { queue }
 }
 
@@ -71,4 +70,4 @@ for (let i = 1; i <= 9; i++) {
 - `prefetch: 1` ensures each worker processes one message at a time. Without it, the broker could overwhelm a single worker.
 - `failureStrategy: Requeue` returns a failed job to the queue so another worker can try. Be careful of infinite retry loops — consider using a dead-letter exchange for persistent failures.
 - `options: { persistent: true }` tells RabbitMQ to persist messages to disk so they survive a broker restart.
-- Each worker has its own dedicated channel. Sharing a channel between workers is not recommended because `prefetch` is channel-scoped.
+- Each worker gets its own channel automatically, so `prefetch: 1` applies to each worker separately.

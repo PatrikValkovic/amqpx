@@ -1,26 +1,50 @@
 import { EventEmitter } from 'events';
 import * as amqp from 'amqplib';
 import { ChannelImplementation } from '../channel';
+import { ExchangeImplementation } from '../exchange';
+import { QueueImplementation } from '../queue';
 import { TestExchange, TestQueue } from '../extensions/vitest';
+import { AssertionMode } from '../types';
 import { TooManyRetriesError } from '../errors';
 import { ConnectionImplementation, connect } from './connection-implementation';
 import { ConnectionState } from './connection';
 
 vi.mock('amqplib');
 
+type NativeChannelMock = EventEmitter & Record<
+    'close' | 'assertExchange' | 'checkExchange' | 'assertQueue' | 'checkQueue' | 'bindQueue' | 'bindExchange',
+    ReturnType<typeof vi.fn>
+>;
+
+const createNativeChannel = (): NativeChannelMock => Object.assign(new EventEmitter(), {
+    close: vi.fn().mockResolvedValue(undefined),
+    assertExchange: vi.fn().mockImplementation((exchange: string) => Promise.resolve({ exchange })),
+    checkExchange: vi.fn().mockResolvedValue({}),
+    assertQueue: vi.fn().mockImplementation((queue: string) => Promise.resolve({ queue, messageCount: 0, consumerCount: 0 })),
+    checkQueue: vi.fn().mockImplementation((queue: string) => Promise.resolve({ queue, messageCount: 3, consumerCount: 1 })),
+    bindQueue: vi.fn().mockResolvedValue({}),
+    bindExchange: vi.fn().mockResolvedValue({}),
+});
+
 describe('ConnectionImplementation', () => {
     let mockNativeConnection: EventEmitter & {
         close: ReturnType<typeof vi.fn>;
         createChannel: ReturnType<typeof vi.fn>;
     };
+    let nativeChannels: NativeChannelMock[];
     let connection: ConnectionImplementation;
 
     beforeEach(() => {
         vitest.useRealTimers();
         vi.clearAllMocks();
+        nativeChannels = [];
         mockNativeConnection = Object.assign(new EventEmitter(), {
             close: vi.fn().mockResolvedValue(undefined),
-            createChannel: vi.fn().mockResolvedValue({}),
+            createChannel: vi.fn().mockImplementation(() => {
+                const nativeChannel = createNativeChannel();
+                nativeChannels.push(nativeChannel);
+                return Promise.resolve(nativeChannel);
+            }),
         });
         // typing doesn't match
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -239,6 +263,63 @@ describe('ConnectionImplementation', () => {
             expect(closeListener).toHaveBeenCalledTimes(1);
             expect(connection.state()).toEqual(ConnectionState.closed);
         });
+
+        describe('topology channel', () => {
+            const openedChannel = () => {
+                const [channel] = nativeChannels;
+                if (!channel)
+                    throw new Error('the topology channel was not opened');
+                return channel;
+            };
+
+            it('should close the topology channel before the native connection when the channel was opened', async () => {
+                await connection.createQueue('orders');
+                const topologyChannel = openedChannel();
+
+                await connection.close();
+
+                expect(nativeChannels).toHaveLength(1);
+                expect(topologyChannel.close).toHaveBeenCalledTimes(1);
+                expect(topologyChannel.close.mock.invocationCallOrder[0])
+                    .toBeLessThan(mockNativeConnection.close.mock.invocationCallOrder[0] ?? 0);
+            });
+
+            it('should not open any channel when closing a connection that never declared anything', async () => {
+                await connection.connect();
+
+                await connection.close();
+
+                expect(mockNativeConnection.createChannel).not.toHaveBeenCalled();
+                expect(mockNativeConnection.close).toHaveBeenCalledTimes(1);
+            });
+
+            it('should still close the native connection when closing the topology channel times out', async () => {
+                await connection.createQueue('orders');
+                openedChannel().close.mockImplementation(() => new Promise(() => { /* never settles */ }));
+                const closeListener = vi.fn();
+                connection.on('close', closeListener);
+
+                await expect(connection.close(50)).resolves.toBeUndefined();
+
+                expect(mockNativeConnection.close).toHaveBeenCalledTimes(1);
+                expect(closeListener).toHaveBeenCalledTimes(1);
+                expect(connection.state()).toBe(ConnectionState.closed);
+            });
+
+            it('should leave the native connection only the time the topology channel did not use when closing', async () => {
+                await connection.createQueue('orders');
+                openedChannel().close.mockImplementation(() => new Promise(resolve => setTimeout(resolve, 150)));
+                mockNativeConnection.close.mockImplementation(() => new Promise(() => { /* never settles */ }));
+
+                const start = performance.now();
+                await expect(connection.close(300)).rejects.toThrow('Connection close timed out');
+                const elapsed = performance.now() - start;
+
+                // the budget is shared: ~300 ms in total, not 150 + 300
+                expect(elapsed).toBeGreaterThanOrEqual(280);
+                expect(elapsed).toBeLessThan(400);
+            });
+        });
     });
 
     describe('state', () => {
@@ -320,6 +401,191 @@ describe('ConnectionImplementation', () => {
             const channel = connection.createChannel();
 
             expect(channel.connection).toBe(connection);
+        });
+    });
+
+    describe('topology', () => {
+        const topologyChannel = () => (connection as unknown as { topologyChannel: ChannelImplementation }).topologyChannel;
+
+        describe('createExchange', () => {
+            it('should assert the exchange and return an exchange handle when called', async () => {
+                const exchange = await connection.createExchange('orders', 'topic', { durable: true });
+
+                expect(exchange).toBeInstanceOf(ExchangeImplementation);
+                expect(await exchange.name()).toBe('orders');
+                expect(nativeChannels).toHaveLength(1);
+                expect(nativeChannels[0]!.assertExchange).toHaveBeenCalledWith('orders', 'topic', expect.objectContaining({ durable: true }));
+            });
+
+            it('should only check the exchange when assertionMode is Check', async () => {
+                await connection.createExchange('orders', 'topic', { assertionMode: AssertionMode.Check });
+
+                expect(nativeChannels[0]!.checkExchange).toHaveBeenCalledWith('orders');
+                expect(nativeChannels[0]!.assertExchange).not.toHaveBeenCalled();
+            });
+
+            it('should not touch the broker when assertionMode is Passive', async () => {
+                await connection.createExchange('orders', 'topic', { assertionMode: AssertionMode.Passive });
+
+                expect(nativeChannels[0]!.checkExchange).not.toHaveBeenCalled();
+                expect(nativeChannels[0]!.assertExchange).not.toHaveBeenCalled();
+            });
+        });
+
+        describe('createQueue', () => {
+            it('should assert the queue and return a queue handle when called', async () => {
+                const queue = await connection.createQueue('jobs', { durable: true });
+
+                expect(queue).toBeInstanceOf(QueueImplementation);
+                expect(await queue.name()).toBe('jobs');
+                expect(nativeChannels).toHaveLength(1);
+                expect(nativeChannels[0]!.assertQueue).toHaveBeenCalledWith('jobs', expect.objectContaining({ durable: true }));
+            });
+
+            it('should only check the queue when assertionMode is Check', async () => {
+                await connection.createQueue('jobs', { assertionMode: AssertionMode.Check });
+
+                expect(nativeChannels[0]!.checkQueue).toHaveBeenCalledWith('jobs');
+                expect(nativeChannels[0]!.assertQueue).not.toHaveBeenCalled();
+            });
+
+            it('should not touch the broker when assertionMode is Passive', async () => {
+                await connection.createQueue('jobs', { assertionMode: AssertionMode.Passive });
+
+                expect(nativeChannels[0]!.checkQueue).not.toHaveBeenCalled();
+                expect(nativeChannels[0]!.assertQueue).not.toHaveBeenCalled();
+            });
+        });
+
+        describe('checkQueue', () => {
+            it('should resolve the queue metadata when the queue exists', async () => {
+                const reply = await connection.checkQueue('jobs');
+
+                expect(reply).toEqual({ queue: 'jobs', messageCount: 3, consumerCount: 1 });
+                expect(nativeChannels[0]!.checkQueue).toHaveBeenCalledWith('jobs');
+            });
+
+            it('should reject when the broker rejects the check', async () => {
+                const error = new Error('NOT_FOUND');
+                await connection.createQueue('first');
+                nativeChannels[0]!.checkQueue.mockRejectedValueOnce(error);
+
+                await expect(connection.checkQueue('missing')).rejects.toBe(error);
+            });
+        });
+
+        describe('channel usage', () => {
+            it('should share one native channel when exchanges and queues are declared and checked', async () => {
+                await connection.createExchange('orders', 'topic');
+                await connection.createQueue('jobs');
+                await connection.checkQueue('jobs');
+
+                expect(mockNativeConnection.createChannel).toHaveBeenCalledTimes(1);
+                expect(nativeChannels[0]!.assertExchange).toHaveBeenCalledTimes(1);
+                expect(nativeChannels[0]!.assertQueue).toHaveBeenCalledTimes(1);
+                expect(nativeChannels[0]!.checkQueue).toHaveBeenCalledTimes(1);
+            });
+
+            it('should not open the native channel when nothing is declared', async () => {
+                await connection.connect();
+
+                expect(mockNativeConnection.createChannel).not.toHaveBeenCalled();
+            });
+
+            it('should not share the native channel with createChannel when both are used', async () => {
+                await connection.createQueue('jobs');
+                const channel = connection.createChannel();
+
+                expect(channel).not.toBe(topologyChannel());
+                expect(await channel.native()).not.toBe(await topologyChannel().native());
+            });
+
+            it('should give each producer and consumer its own channel when created from the connection, a queue or an exchange', async () => {
+                const queue = await connection.createQueue('jobs');
+                const exchange = await connection.createExchange('orders', 'topic');
+
+                const producers = [
+                    await queue.createProducer(),
+                    await exchange.createProducer(),
+                    await connection.createProducerForQueue(queue),
+                    await connection.createProducerForExchange(exchange),
+                ];
+                const consumers = [
+                    await queue.createConsumer(),
+                    await queue.createBatchConsumer(),
+                    await exchange.createConsumer({ pattern: '#' }),
+                    await exchange.createBatchConsumer({ pattern: '#' }),
+                    await connection.createConsumerForQueue(queue),
+                    await connection.createBatchConsumerForQueue(queue),
+                    await connection.createConsumerForExchange(exchange, { pattern: '#' }),
+                    await connection.createBatchConsumerForExchange(exchange, { pattern: '#' }),
+                ];
+                const channels = [...producers, ...consumers].map(entity => entity.channel);
+
+                expect(new Set(channels).size).toBe(channels.length);
+                expect(channels).not.toContain(topologyChannel());
+                const nativeTopology = await topologyChannel().native();
+                expect(await producers[0]!.channel.native()).not.toBe(nativeTopology);
+                expect(await consumers[0]!.channel.native()).not.toBe(nativeTopology);
+
+                await Promise.all(producers.map(producer => producer.close()));
+            });
+        });
+
+        describe('channel failures', () => {
+            it('should not throw nor emit connection error when the native channel emits error', async () => {
+                const connectionErrorListener = vi.fn();
+                connection.on('error', connectionErrorListener);
+                await connection.createQueue('jobs');
+
+                expect(() => nativeChannels[0]!.emit('error', new Error('PRECONDITION_FAILED'))).not.toThrow();
+                expect(connectionErrorListener).not.toHaveBeenCalled();
+            });
+
+            it('should open a new native channel on the next call when the previous one errored', async () => {
+                await connection.createQueue('jobs');
+                nativeChannels[0]!.emit('error', new Error('PRECONDITION_FAILED'));
+                nativeChannels[0]!.emit('close');
+
+                const reply = await connection.checkQueue('jobs');
+
+                expect(reply.queue).toBe('jobs');
+                expect(nativeChannels).toHaveLength(2);
+                expect(nativeChannels[1]!.checkQueue).toHaveBeenCalledWith('jobs');
+            });
+
+            it('should re-assert declared entities on the new native channel when the previous one closed', async () => {
+                const queue = await connection.createQueue('jobs');
+                const exchange = await connection.createExchange('orders', 'topic');
+                await queue.bindExchange(exchange, 'order.*');
+
+                nativeChannels[0]!.emit('close');
+                await queue.name();
+                await exchange.name();
+
+                expect(nativeChannels).toHaveLength(2);
+                expect(nativeChannels[1]!.assertQueue).toHaveBeenCalledWith('jobs', expect.anything());
+                expect(nativeChannels[1]!.assertExchange).toHaveBeenCalledWith('orders', 'topic', expect.anything());
+                expect(nativeChannels[1]!.bindQueue).toHaveBeenCalledWith('jobs', 'orders', 'order.*', undefined);
+            });
+        });
+
+        describe('listeners', () => {
+            it('should not warn about too many listeners when many queues and exchanges are declared', async () => {
+                const warningListener = vi.fn();
+                process.on('warning', warningListener);
+                try {
+                    for (let i = 0; i < 25; i++) {
+                        await connection.createQueue(`queue-${i}`);
+                        await connection.createExchange(`exchange-${i}`, 'direct');
+                    }
+                    await new Promise(resolve => setImmediate(resolve));
+
+                    expect(warningListener).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'MaxListenersExceededWarning' }));
+                } finally {
+                    process.off('warning', warningListener);
+                }
+            });
         });
     });
 

@@ -26,33 +26,33 @@ Wrapper over `amqplib` for RabbitMQ. All core entities have interface + implemen
 
 **Dependency hierarchy (top → bottom):**
 ```
-Connection → Channel → Exchange / Queue → Producer / Consumer
+Connection → Exchange / Queue → Producer / Consumer
 ```
 
-Each layer expose factory methods to create layer below (e.g. `Channel.queue()` returns `Queue`, `Queue.consumer()` returns `Consumer`).
+Each layer expose factory methods to create layer below (e.g. `Connection.createQueue()` returns `Queue`, `Queue.createConsumer()` returns `Consumer`). Every producer/consumer opens its own dedicated channel automatically. `Channel` is an escape hatch for direct channel access (manual confirm channel, sharing a channel via the `channel` option, `channel.native()`); users never need to create one in the mainstream flow.
 
 ### Core layers (`src/`)
 
 | Layer | Dir | Purpose |
 |---|---|---|
-| Connection | `/connection` | Lifecycle state machine (preconnect→connected→closed), reconnection via `RetryStrategy`; exports `connect` factory fn |
-| Channel | `/channel` | Wraps amqplib channel; creates exchanges, queues, producers, consumers |
-| Exchange | `/exchange` | assert, bind queues/exchanges; `DefaultExchange` wraps broker default exchange |
+| Connection | `/connection` | Lifecycle state machine (preconnect→connected→closed), reconnection via `RetryStrategy`; exports `connect` factory fn; creates exchanges/queues (`createExchange`, `createQueue`, `checkQueue`) and producers/consumers on dedicated channels |
+| Exchange | `/exchange` | assert, bind queues/exchanges, create consumer/producer; `DefaultExchange` wraps broker default exchange |
 | Queue | `/queue` | assert, bind to exchange, create consumer/producer |
 | Producer | `/producer` | Generic `<T>`, serialization, routing key fn, `beforeSend`/`afterSend` hooks, drain backpressure |
 | Consumer | `/consumer` | `Consumer<Message>` + `BatchConsumer<Message>`; failure strategies (Drop/Requeue/Reject), prefetch, auto-reconnect; batch configurable by size/timeout |
 | Retry | `/retry` | `RetryStrategy` with pluggable `TimeStrategy`; used by Connection |
 | GracefulShutdown | `/graceful-shutdown` | `RabbitCloser`: orderly shutdown — producers → consumers → channels → connections, with optional timeout budget |
+| Channel | `/channel` | Escape hatch: wraps amqplib channel for direct access; same factory methods as Connection, but producers/consumers created from it share the channel |
 
 **Root-level source files:**
-- `src/predefined.ts` — 6 factory fns for broker-default exchanges (`directExchange`, `fanoutExchange`, `headersExchange`, `matchExchange`, `topicExchange`, `defaultExchange`); exported as `predefined.*` namespace
+- `src/predefined.ts` — 6 factory fns for broker-default exchanges (`directExchange`, `fanoutExchange`, `headersExchange`, `matchExchange`, `topicExchange`, `defaultExchange`); exported as `predefined.*` namespace. Each accepts a `Connection` (returns `Promise<Exchange>`) or a `Channel` (returns `Exchange` synchronously)
 - `src/errors.ts` — `TooManyRetriesError`, `DrainError`
 - `src/types.ts` — Shared types
 
 ### Extensions (`src/extensions/`)
 
 - **`/zod`** — `ZodValidatedConsumer` and `ZodValidatedBatchConsumer`: validate incoming messages against a Zod schema before handler; throws `ZodError` on validation failure
-- **`/vitest`** and **`/jest`** — Mock implementations (`TestConnection`, `TestChannel`, `TestQueue`, `TestExchange`, `TestProducer`, `TestConsumer`, `TestBatchConsumer`) for unit tests
+- **`/vitest`** and **`/jest`** — Mock implementations (`TestConnection`, `TestQueue`, `TestExchange`, `TestProducer`, `TestConsumer`, `TestBatchConsumer`, `TestChannel`) for unit tests
 
 ### Package exports
 

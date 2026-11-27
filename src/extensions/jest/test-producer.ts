@@ -14,10 +14,6 @@ import { TestChannel } from './test-channel';
  *
  * const producer = new TestProducer();
  *
- * const channel = producer.getChannel();
- *
- * expect(channel).toBeInstanceOf(TestChannel);
- *
  * const msg = await producer.publish('test');
  *
  * expect(msg).toBe('test');
