@@ -1,6 +1,7 @@
 import { TestChannel, TestExchange, TestQueue } from '../extensions/vitest';
 import { ProducerImplementation } from '../producer';
 import { AssertionMode } from '../types';
+import { QueueImplementation, QueueOptions } from '../queue';
 import { ExchangeImplementation } from './exchange-implementation';
 
 describe('ExchangeImplementation', () => {
@@ -134,70 +135,67 @@ describe('ExchangeImplementation', () => {
     });
 
     describe('bindQueue', () => {
-        it('should call nativeChannel.bindQueue with queueName, exchangeName, and pattern', async () => {
+        it('should delegate to queue.bindExchange with the exchange, pattern, and no args', async () => {
             const queue = new TestQueue();
 
-            await exchange.assert();
             await exchange.bindQueue(queue, 'my.routing.key');
 
-            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledWith(
-                'test-queue',
-                'my-exchange',
-                'my.routing.key',
-                undefined,
-            );
+            expect(queue.bindExchange).toHaveBeenCalledTimes(1);
+            expect(queue.bindExchange).toHaveBeenCalledWith(exchange, 'my.routing.key', undefined);
         });
 
-        it('should pass binding args when provided', async () => {
+        it('should pass binding args to queue.bindExchange when provided', async () => {
             const queue = new TestQueue();
             const args = { 'x-match': 'all', priority: 10 };
 
-            await exchange.assert();
             await exchange.bindQueue(queue, 'my.routing.key', args);
 
-            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledWith(
-                'test-queue',
-                'my-exchange',
-                'my.routing.key',
-                args,
-            );
+            expect(queue.bindExchange).toHaveBeenCalledWith(exchange, 'my.routing.key', args);
         });
 
-        it('should not register duplicate bindings when bindQueue is called twice with same queue and pattern', async () => {
+        it('should return the exchange itself for chaining', async () => {
             const queue = new TestQueue();
 
-            await exchange.assert();
-            await exchange.bindQueue(queue, 'routing.key');
-            await exchange.bindQueue(queue, 'routing.key');
-            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledTimes(2);
+            expect(await exchange.bindQueue(queue, 'my.routing.key')).toBe(exchange);
+        });
 
-            // Second call still calls nativeChannel.bindQueue, but internal binding list should deduplicate
-            // after channel close, rebind should only call bindQueue once for this queue+pattern combination
+        it('should not perform the native bind itself', async () => {
+            const queue = new TestQueue();
+
+            await exchange.bindQueue(queue, 'my.routing.key');
+
+            expect(channel.nativeChannel.bindQueue).not.toHaveBeenCalled();
+        });
+
+        it('should propagate a failure from queue.bindExchange', async () => {
+            const queue = new TestQueue();
+            queue.bindExchange.mockRejectedValueOnce(new Error('bind failed'));
+
+            await expect(exchange.bindQueue(queue, 'my.routing.key')).rejects.toThrow('bind failed');
+        });
+
+        it('should not re-bind queues when the exchange is re-asserted', async () => {
+            const queue = new TestQueue();
+
+            await exchange.bindQueue(queue, 'routing.key');
             channel.emit('close');
             await exchange.assert();
 
-            // bindQueue is called: 2 times during initial binding + 1 time during rebind (deduplicated)
-            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledTimes(3);
+            expect(queue.bindExchange).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.bindQueue).not.toHaveBeenCalled();
         });
 
-        it('should allow different patterns for the same queue', async () => {
-            const queue = new TestQueue();
+        it('should bind once through a real queue without re-entering the exchange', async () => {
+            const queue = new QueueImplementation(channel, 'real-queue');
+            const bindExchangeSpy = vi.spyOn(queue, 'bindExchange');
+            const bindQueueSpy = vi.spyOn(exchange, 'bindQueue');
 
-            await exchange.assert();
-            await exchange.bindQueue(queue, 'pattern.one');
-            await exchange.bindQueue(queue, 'pattern.two');
-            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledTimes(2);
+            await exchange.bindQueue(queue, 'routing.key', { a: 1 });
 
-            channel.emit('close');
-            await exchange.assert();
-
-            // After rebind, both patterns should be re-registered
-            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledTimes(4);
-            const bindQueueCalls = channel.nativeChannel.bindQueue.mock.calls;
-            const rebindCalls = bindQueueCalls.slice(2); // first 2 are initial bindings
-            const rebindPatterns = rebindCalls.map((call: unknown[]) => call[2]);
-            expect(rebindPatterns).toContain('pattern.one');
-            expect(rebindPatterns).toContain('pattern.two');
+            expect(bindQueueSpy).toHaveBeenCalledTimes(1);
+            expect(bindExchangeSpy).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledWith('real-queue', 'my-exchange', 'routing.key', { a: 1 });
         });
     });
 
@@ -284,21 +282,55 @@ describe('ExchangeImplementation', () => {
 
     describe('createConsumer', () => {
         it('should create consumer on the exchange with the new queue and provided pattern', async () => {
+            const queue = new TestQueue();
+            channel.createQueue.mockResolvedValueOnce(queue);
+
             const consumer = await exchange.createConsumer({
                 pattern: 'test.pattern',
             });
 
-            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledWith(
-                'test-queue',
-                'my-exchange',
-                'test.pattern',
-                undefined,
-            );
+            expect(queue.bindExchange).toHaveBeenCalledWith(exchange, 'test.pattern', undefined);
+            expect(queue.createConsumer).toHaveBeenCalledWith(expect.objectContaining({ pattern: 'test.pattern' }));
             expect(channel.createQueue).toHaveBeenCalledWith('', expect.objectContaining({
                 durable: false,
                 exclusive: true,
             }));
             expect(consumer.channel).not.toBe(channel);
+        });
+
+        it('should bind the queue through queue.bindExchange with binding args', async () => {
+            const queue = new TestQueue();
+            channel.createQueue.mockResolvedValueOnce(queue);
+
+            await exchange.createConsumer({
+                pattern: '',
+                bindingArgs: { 'x-match': 'any', type: 'order' },
+            });
+
+            expect(queue.bindExchange).toHaveBeenCalledWith(exchange, '', { 'x-match': 'any', type: 'order' });
+        });
+
+        it('should bind the server-generated queue name and re-bind the new name after channel close', async () => {
+            let generated = 0;
+            channel.nativeChannel.assertQueue.mockImplementation(() => Promise.resolve({
+                queue: `amq.gen-${++generated}`,
+                messageCount: 0,
+                consumerCount: 0,
+            }));
+            channel.createQueue.mockImplementationOnce((name: string, options: QueueOptions) =>
+                new QueueImplementation(channel, name, options).assert());
+
+            const consumer = await exchange.createConsumer({ pattern: 'test.pattern' });
+
+            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledTimes(1);
+            expect(channel.nativeChannel.bindQueue).toHaveBeenLastCalledWith('amq.gen-1', 'my-exchange', 'test.pattern', undefined);
+
+            channel.emit('close');
+            expect(await consumer.queue.name()).toBe('amq.gen-2');
+
+            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledTimes(2);
+            expect(channel.nativeChannel.bindQueue).toHaveBeenLastCalledWith('amq.gen-2', 'my-exchange', 'test.pattern', undefined);
+            expect(channel.nativeChannel.bindQueue).not.toHaveBeenCalledWith('', expect.anything(), expect.anything(), expect.anything());
         });
 
         it('should pass additional queueOptions to createQueue', async () => {
@@ -317,6 +349,9 @@ describe('ExchangeImplementation', () => {
 
     describe('createBatchConsumer', () => {
         it('should create batch consumer with empty name, durable=false, exclusive=true', async () => {
+            const queue = new TestQueue();
+            channel.createQueue.mockResolvedValueOnce(queue);
+
             await exchange.createBatchConsumer({
                 pattern: 'test.pattern',
             });
@@ -325,12 +360,20 @@ describe('ExchangeImplementation', () => {
                 durable: false,
                 exclusive: true,
             }));
-            expect(channel.nativeChannel.bindQueue).toHaveBeenCalledWith(
-                'test-queue',
-                'my-exchange',
-                'test.pattern',
-                undefined,
-            );
+            expect(queue.bindExchange).toHaveBeenCalledWith(exchange, 'test.pattern', undefined);
+            expect(queue.createBatchConsumer).toHaveBeenCalledWith(expect.objectContaining({ pattern: 'test.pattern' }));
+        });
+
+        it('should bind the queue through queue.bindExchange with binding args', async () => {
+            const queue = new TestQueue();
+            channel.createQueue.mockResolvedValueOnce(queue);
+
+            await exchange.createBatchConsumer({
+                pattern: '',
+                bindingArgs: { 'x-match': 'all', type: 'order' },
+            });
+
+            expect(queue.bindExchange).toHaveBeenCalledWith(exchange, '', { 'x-match': 'all', type: 'order' });
         });
 
         it('should pass additional queueOptions to createQueue', async () => {

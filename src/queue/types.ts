@@ -18,10 +18,10 @@ export type QueueOptions = amqp.Options.AssertQueue & {
     assertionMode?: AssertionMode;
 };
 
-type ExchangeName = string;
 type Pattern = string;
-export type Bindings = Record<ExchangeName, Record<Pattern, {
+/** A binding of a queue to an exchange. */
+export type QueueBinding = {
     exchange: Exchange;
     pattern: Pattern;
     args?: BindingArgs;
-}>>;
+};

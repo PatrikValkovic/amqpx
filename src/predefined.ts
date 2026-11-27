@@ -1,90 +1,101 @@
 import { ExchangeImplementation, Exchange } from './exchange';
 import { Channel } from './channel';
 import { DefaultExchange } from './exchange/default-exchange';
+import { AssertionMode } from './types';
 
 /**
- * This will create a direct exchange that is created by default by RabbitMQ container.
+ * Returns the direct exchange that RabbitMQ creates by default in every virtual host.
  *
- * The direct exchange has name *amqp.direct*, is durable, and has type *direct*.
+ * The exchange has name *amq.direct*, is durable, and has type *direct*.
+ * The exchange always exists on the broker, so it is never declared.
  *
- * @param channel The channel that should assert the exchange
- * @returns The exchange that was created
+ * @param channel The channel the exchange belongs to
+ * @returns The predefined exchange
  */
 export const directExchange = (channel: Channel): Exchange => new ExchangeImplementation(
     channel,
-    'amqp.direct',
+    'amq.direct',
     'direct',
     {
         durable: true,
+        assertionMode: AssertionMode.Passive,
     },
 );
 
 /**
- * This will create a fanout exchange that is created by default by RabbitMQ container.
+ * Returns the fanout exchange that RabbitMQ creates by default in every virtual host.
  *
- * The fanout exchange has name *amqp.fanout*, is durable, and has type *fanout*.
+ * The exchange has name *amq.fanout*, is durable, and has type *fanout*.
+ * The exchange always exists on the broker, so it is never declared.
  *
- * @param channel The channel that should assert the exchange
- * @returns The exchange that was created
+ * @param channel The channel the exchange belongs to
+ * @returns The predefined exchange
  */
 export const fanoutExchange = (channel: Channel): Exchange => new ExchangeImplementation(
     channel,
-    'amqp.fanout',
+    'amq.fanout',
     'fanout',
     {
         durable: true,
+        assertionMode: AssertionMode.Passive,
     },
 );
 
 /**
- * This will create a headers exchange that is created by default by RabbitMQ container.
+ * Returns the headers exchange that RabbitMQ creates by default in every virtual host.
  *
- * The headers exchange has name *amqp.headers*, is durable, and has type *headers*.
+ * The exchange has name *amq.headers*, is durable, and has type *headers*.
+ * The exchange always exists on the broker, so it is never declared.
  *
- * @param channel The channel that should assert the exchange
- * @returns The exchange that was created
+ * @param channel The channel the exchange belongs to
+ * @returns The predefined exchange
  */
 export const headersExchange = (channel: Channel): Exchange => new ExchangeImplementation(
     channel,
-    'amqp.headers',
+    'amq.headers',
     'headers',
     {
         durable: true,
+        assertionMode: AssertionMode.Passive,
     },
 );
 
 /**
- * This will create a match exchange that is created by default by RabbitMQ container.
- * Behaves the same as headers exchange, but has a different name.
+ * Returns the match exchange that RabbitMQ creates by default in every virtual host.
+ * Behaves the same as {@link headersExchange}, but has a different name.
  *
- * The match exchange has name *amqp.match*, is durable, and has type *match*.
+ * The exchange has name *amq.match*, is durable, and has type *headers*.
+ * The exchange always exists on the broker, so it is never declared.
  *
- * @param channel The channel that should assert the exchange
- * @returns The exchange that was created
+ * @param channel The channel the exchange belongs to
+ * @returns The predefined exchange
  */
 export const matchExchange = (channel: Channel): Exchange => new ExchangeImplementation(
     channel,
-    'amqp.match',
-    'match',
+    'amq.match',
+    'headers',
     {
         durable: true,
+        assertionMode: AssertionMode.Passive,
     },
 );
 
 /**
- * This will create a topic exchange that is created by default by RabbitMQ container.
+ * Returns the topic exchange that RabbitMQ creates by default in every virtual host.
  *
- * The topic exchange has name *amqp.topic*, is durable, and has type *topic*.
+ * The exchange has name *amq.topic*, is durable, and has type *topic*.
+ * The exchange always exists on the broker, so it is never declared.
  *
- * @param channel The channel that should assert the exchange
- * @returns The exchange that was created
+ * @param channel The channel the exchange belongs to
+ * @returns The predefined exchange
  */
 export const topicExchange = (channel: Channel): Exchange => new ExchangeImplementation(
     channel,
-    'amqp.topic',
+    'amq.topic',
     'topic',
     {
         durable: true,
+        assertionMode: AssertionMode.Passive,
     },
 );
 

@@ -16,8 +16,8 @@ type OrderEvent = {
 // ---- Topology ----
 
 async function topology(connection: Connection) {
-  const channel = await connection.createChannel()
-  const exchange = channel.createExchange('order-events', 'topic', { durable: true })
+  const channel = connection.createChannel()
+  const exchange = await channel.createExchange('order-events', 'topic', { durable: true })
   return { exchange }
 }
 
@@ -45,7 +45,7 @@ const producer = await exchange.createProducer<OrderEvent>({
 const euOrdersConsumer = await exchange.createConsumer<OrderEvent>({
   pattern: 'orders.eu.*',
   prefetch: 10,
-  channel: await connection.createChannel(),
+  channel: connection.createChannel(),
 })
 
 // Consumer 2: all orders from all regions (full audit log)
@@ -53,7 +53,7 @@ const euOrdersConsumer = await exchange.createConsumer<OrderEvent>({
 const allOrdersConsumer = await exchange.createConsumer<OrderEvent>({
   pattern: 'orders.#',
   prefetch: 10,
-  channel: await connection.createChannel(),
+  channel: connection.createChannel(),
 })
 
 await euOrdersConsumer.listen(async ({ message, rabbitMessage }) => {

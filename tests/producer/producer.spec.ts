@@ -293,7 +293,8 @@ describe('Producer integration', () => {
             await compose(['up', '-d']);
             await waitForHealthy(RABBIT_CONTAINER);
 
-            await exchange.assert();
+            // re-declare the queue (and its binding) so its message count can be read
+            await queue.assert();
             await sleepPromise(PROPAGATION_DELAY);
             const status = await rabbitApi.queueDetail(queueName);
             expect(status.messages).toBe(0);
